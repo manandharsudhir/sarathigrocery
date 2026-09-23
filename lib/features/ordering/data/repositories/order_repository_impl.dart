@@ -25,7 +25,10 @@ class OrderRepositoryImpl implements OrderRepository {
             'status': o.status.name,
             'createdDate': toMillis(o.createdDate),
             'updatedDate': toMillis(o.updatedDate),
-            'paid': o.paid,
+            'placedByUserId': o.placedByUserId,
+            'assignedToId': o.assignedToId,
+            'assignedToName': o.assignedToName,
+            'overCreditLimit': o.overCreditLimit,
           },
           fromJson: (j) {
             final customer = customers.byId(j['customerId']);
@@ -47,18 +50,66 @@ class OrderRepositoryImpl implements OrderRepository {
               status: OrderStatus.values.byName(j['status']),
               createdDate: fromMillis(j['createdDate']),
               updatedDate: fromMillis(j['updatedDate']),
-              paid: j['paid'] ?? false,
+              placedByUserId: j['placedByUserId'],
+              assignedToId: j['assignedToId'],
+              assignedToName: j['assignedToName'] ?? '',
+              overCreditLimit: j['overCreditLimit'] ?? false,
             );
           },
           merge: (o, j) => o
             ..status = OrderStatus.values.byName(j['status'])
             ..updatedDate = fromMillis(j['updatedDate'])
-            ..paid = j['paid'] ?? false,
+            ..assignedToId = j['assignedToId']
+            ..assignedToName = j['assignedToName'] ?? '',
         );
 
   final SyncedCollection<CustomerOrder> _orders;
 
-  List<SyncedCollection<Object?>> get collections => [_orders];
+  /// Kept apart from the order so only the customer can read it — the
+  /// delivery person must *get* it from the customer. Doc id = order id.
+  final _codes = SyncedCollection<({String orderId, String customerId, String code})>(
+    'deliveryCodes',
+    idOf: (c) => c.orderId,
+    toJson: (c) => {'customerId': c.customerId, 'code': c.code},
+    fromJson: (j) => (orderId: j['id'] as String, customerId: j['customerId'] as String, code: j['code'] as String),
+  );
+
+  /// Never mirrored; read on demand. Doc id = order id.
+  final _codeChecks = SyncedCollection<({String orderId, String code, int attempts})>(
+    'codeChecks',
+    idOf: (c) => c.orderId,
+    toJson: (c) => {'lastCode': c.code, 'attempts': c.attempts, 'verified': false},
+    fromJson: (j) => (orderId: j['id'] as String, code: j['lastCode'] as String, attempts: toInt(j['attempts'])),
+  );
+
+  List<SyncedCollection<Object?>> get collections => [_orders, _codes, _codeChecks];
+
+  @override
+  Future<int> codeAttempts(CustomerOrder order) async => toInt((await _codeChecks.fetch(order.id))?['attempts']);
+
+  @override
+  void registerCodeAttempt(CustomerOrder order, String code, int attempt) => _codeChecks.add((orderId: order.id, code: code, attempts: attempt));
+
+  @override
+  void claimCodeVerified(CustomerOrder order) => _codeChecks.patch(order.id, {'verified': true});
+
+  @override
+  void resetCodeAttempts(CustomerOrder order) => _codeChecks.remove((orderId: order.id, code: '', attempts: 0));
+
+  @override
+  String? deliveryCodeFor(String orderId) => _codes.byId(orderId)?.code;
+
+  @override
+  void saveDeliveryCode(CustomerOrder order, String code) => _codes.add((orderId: order.id, customerId: order.customer.id, code: code));
+
+  @override
+  void assign(CustomerOrder order, {required String? userId, required String userName}) {
+    order
+      ..assignedToId = userId
+      ..assignedToName = userName
+      ..updatedDate = DateTime.now();
+    _orders.save(order);
+  }
 
   @override
   List<CustomerOrder> get orders => _orders.items;
@@ -101,6 +152,8 @@ class OrderRepositoryImpl implements OrderRepository {
     required DeliveryType deliveryType,
     required String address,
     required String notes,
+    String? placedByUserId,
+    bool overCreditLimit = false,
   }) {
     final order = CustomerOrder(
       id: nextId('O'),
@@ -112,6 +165,8 @@ class OrderRepositoryImpl implements OrderRepository {
       notes: notes,
       createdDate: DateTime.now(),
       updatedDate: DateTime.now(),
+      placedByUserId: placedByUserId,
+      overCreditLimit: overCreditLimit,
     );
     _orders.add(order);
     return order;

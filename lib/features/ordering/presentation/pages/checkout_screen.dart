@@ -37,6 +37,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               )),
           const Divider(),
           Text('Total: ${formatNpr(widget.ordering.cartTotal)}', style: Theme.of(context).textTheme.headlineSmall),
+          Builder(builder: (context) {
+            final customer = widget.customers.customers.where((c) => c.id == widget.auth.currentUser?.linkedCustomerId).firstOrNull;
+            if (customer == null) return const SizedBox.shrink();
+            final after = widget.ordering.creditExposure(customer) + widget.ordering.cartTotal;
+            final over = after > customer.creditLimit;
+            return Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                over
+                    ? 'With open orders this comes to ${formatNpr(after)}, over your ${formatNpr(customer.creditLimit)} credit limit. You can still order; the shop will confirm first.'
+                    : 'Credit after this order: ${formatNpr(after)} of ${formatNpr(customer.creditLimit)}.',
+                style: TextStyle(color: over ? Theme.of(context).colorScheme.error : null),
+              ),
+            );
+          }),
           const SizedBox(height: 24),
           SegmentedButton<DeliveryType>(
             segments: const [
@@ -78,6 +93,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       address: _addressController.text.trim(),
       notes: _notesController.text.trim(),
       userName: widget.auth.currentUser?.name ?? '',
+      userId: widget.auth.currentUser?.id,
     );
     if (order == null) return;
 
@@ -85,7 +101,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Order Placed'),
-        content: Text('Order ${order.id} placed for ${formatNpr(order.total)}.'),
+        content: Text('Order ${order.id} placed for ${formatNpr(order.total)}.'
+            '${order.overCreditLimit ? '\n\nThis takes you over your credit limit, so the shop will confirm before delivering.' : ''}'
+            '\n\nOn delivery, open the order to see your delivery code. Give it to the delivery person only once you agree the amount you are paying.'),
         actions: [
           TextButton(
             onPressed: () {

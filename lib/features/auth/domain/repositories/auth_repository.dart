@@ -21,6 +21,9 @@ abstract class AuthRepository {
 
   Future<void> changePassword(String currentPassword, String newPassword);
 
+  /// Re-checks the signed-in user's password before a dangerous action.
+  Future<bool> verifyPassword(String password);
+
   /// Whether the signed-in account has proven ownership of its phone —
   /// required before OTP password reset can work for it.
   bool get phoneVerified;
@@ -54,14 +57,21 @@ String? passwordProblem(String password) =>
     password.length < 8 ? 'Password must be at least 8 characters.' : null;
 
 /// In-process [AuthRepository] for tests / backend-less runs. OTPs aren't
-/// sent anywhere; the last one is exposed as [lastOtp].
+/// sent anywhere; the last one is exposed as [lastOtp]. [forDevice] gives
+/// another device's view: same accounts, its own signed-in session.
 class InMemoryAuthRepository implements AuthRepository {
-  final Map<String, ({String id, String password})> _accounts = {};
-  final Set<String> _verifiedPhones = {};
-  final Map<String, ({String phone, String code})> _otps = {};
-  int _nextId = 1;
-  String? lastOtp;
+  InMemoryAuthRepository() : _shared = _SharedAuthState();
+
+  InMemoryAuthRepository._(this._shared);
+
+  final _SharedAuthState _shared;
   String? _currentPhone;
+
+  InMemoryAuthRepository forDevice() => InMemoryAuthRepository._(_shared);
+
+  Map<String, ({String id, String password})> get _accounts => _shared.accounts;
+
+  String? get lastOtp => _shared.lastOtp;
 
   @override
   String? get currentAccountId => _accounts[_currentPhone]?.id;
@@ -77,7 +87,7 @@ class InMemoryAuthRepository implements AuthRepository {
   @override
   Future<String?> createAccount(String phone, String password) async {
     if (_accounts.containsKey(phone)) return null;
-    final id = 'uid${_nextId++}';
+    final id = 'uid${_shared.nextId++}';
     _accounts[phone] = (id: id, password: password);
     return id;
   }
@@ -93,18 +103,21 @@ class InMemoryAuthRepository implements AuthRepository {
   }
 
   @override
-  bool get phoneVerified => _verifiedPhones.contains(_currentPhone);
+  Future<bool> verifyPassword(String password) async => _accounts[_currentPhone]?.password == password;
+
+  @override
+  bool get phoneVerified => _shared.verifiedPhones.contains(_currentPhone);
 
   String _sendOtp(String phone) {
-    final n = _nextId++;
+    final n = _shared.nextId++;
     final id = 'v$n';
-    lastOtp = '${100000 + n}';
-    _otps[id] = (phone: phone, code: lastOtp!);
+    _shared.lastOtp = '${100000 + n}';
+    _shared.otps[id] = (phone: phone, code: _shared.lastOtp!);
     return id;
   }
 
   String _checkOtp(String verificationId, String code) {
-    final otp = _otps.remove(verificationId);
+    final otp = _shared.otps.remove(verificationId);
     if (otp == null || otp.code != code) throw AuthException('Incorrect or expired code.');
     return otp.phone;
   }
@@ -116,7 +129,7 @@ class InMemoryAuthRepository implements AuthRepository {
   Future<void> completePhoneVerification(String verificationId, String code) async {
     final phone = _checkOtp(verificationId, code);
     if (phone != _currentPhone) throw AuthException('That code was for a different number.');
-    _verifiedPhones.add(phone);
+    _shared.verifiedPhones.add(phone);
   }
 
   @override
@@ -126,9 +139,17 @@ class InMemoryAuthRepository implements AuthRepository {
   Future<void> completePasswordReset(String verificationId, String code, String newPassword) async {
     final phone = _checkOtp(verificationId, code);
     final account = _accounts[phone];
-    if (account == null || !_verifiedPhones.contains(phone)) throw AuthException(kUnverifiedResetMessage);
+    if (account == null || !_shared.verifiedPhones.contains(phone)) throw AuthException(kUnverifiedResetMessage);
     _accounts[phone] = (id: account.id, password: newPassword);
   }
+}
+
+class _SharedAuthState {
+  final Map<String, ({String id, String password})> accounts = {};
+  final Set<String> verifiedPhones = {};
+  final Map<String, ({String phone, String code})> otps = {};
+  int nextId = 1;
+  String? lastOtp;
 }
 
 const kUnverifiedResetMessage =

@@ -64,7 +64,12 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(order.customer.name),
-                            subtitle: Text('${order.id} · ${formatDate(order.createdDate)}'),
+                            subtitle: Text([
+                              '${order.id} · ${formatDate(order.createdDate)}',
+                              if (order.assignedToName.isNotEmpty) 'Delivery: ${order.assignedToName}',
+                              if (order.overCreditLimit && order.status != OrderStatus.delivered) 'Over credit limit',
+                              orderPaymentSummary(order, widget.controller.paymentsFor(order)),
+                            ].where((s) => s.isNotEmpty).join(' · ')),
                             trailing: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.end,

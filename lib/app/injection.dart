@@ -12,6 +12,12 @@ import 'package:sarathigrocery/features/auth/presentation/controllers/auth_contr
 import 'package:sarathigrocery/features/cash/data/repositories/cash_repository_impl.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/customers/data/repositories/customer_repository_impl.dart';
+import 'package:sarathigrocery/features/customers/data/repositories/payment_repository_impl.dart';
+import 'package:sarathigrocery/features/customers/domain/usecases/record_payment.dart';
+import 'package:sarathigrocery/features/customers/domain/usecases/respond_to_payment.dart';
+import 'package:sarathigrocery/features/customers/domain/usecases/reverse_payment.dart';
+import 'package:sarathigrocery/features/customers/domain/usecases/settle_payment.dart';
+import 'package:sarathigrocery/features/customers/presentation/controllers/payments_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 import 'package:sarathigrocery/features/employees/presentation/controllers/employees_controller.dart';
 import 'package:sarathigrocery/features/inventory/data/repositories/product_repository_impl.dart';
@@ -50,9 +56,10 @@ class AppScope {
     final saleRepository = SaleRepositoryImpl(productRepository, customerRepository);
     final purchaseRepository = PurchaseRepositoryImpl(productRepository, supplierRepository);
     final orderRepository = OrderRepositoryImpl(productRepository, customerRepository);
-    final auditRepository = AuditRepositoryImpl();
+    final auditRepository = AuditRepositoryImpl(() => authRepo.currentAccountId);
     final notificationRepository = NotificationRepositoryImpl();
     final settingsRepository = SettingsRepositoryImpl();
+    final paymentRepository = PaymentRepositoryImpl(customerRepository);
 
     final collections = {
       for (final c in [
@@ -67,20 +74,50 @@ class AppScope {
         ...auditRepository.collections,
         ...notificationRepository.collections,
         ...settingsRepository.collections,
+        ...paymentRepository.collections,
       ])
         c.name: c..bind(writes),
     };
 
-    Future<void> connect(AppUser user) => Future.wait([
-          for (final entry in _loadPlan(user).entries)
-            collections[entry.key]!.attach(id: entry.value.id, where: entry.value.where),
-        ]);
+    Future<void> connect(AppUser user) async {
+      await Future.wait([
+        for (final entry in _loadPlan(user).entries) collections[entry.key]!.attach(id: entry.value.id, where: entry.value.where),
+      ]);
+      // One-off fixes for data written by older app versions.
+      if (user.role == UserRole.owner) productRepository.migrateLegacyCosts();
+    }
 
     void disconnect() {
       for (final c in collections.values) {
         c.detach();
       }
       orderRepository.clearCart(); // next login on this device shouldn't inherit it
+    }
+
+    // Owner "reset everything": deletes every document the backend holds.
+    // The owner's profile + setup marker go last, in their own commit, so
+    // the owner stays authorized for all earlier deletes. Online-only; a
+    // failure part-way leaves the rest for a re-run.
+    Future<void> wipeBackend(AppUser owner) async {
+      final store = writes.store;
+      final targets = <String, List<String>>{};
+      for (final name in collections.keys) {
+        if (name == 'meta' || name == 'deliveryCodes') continue;
+        targets[name] = await store.listIds(name);
+      }
+      // Delivery codes are unreadable to the owner by design; delete by order id.
+      targets['deliveryCodes'] = targets['orders'] ?? const [];
+      for (final entry in targets.entries) {
+        for (final id in entry.value) {
+          if (entry.key == 'users' && id == owner.id) continue;
+          writes.enqueue(DeleteOp(entry.key, id));
+        }
+      }
+      await writes.flush(requireOnline: true);
+      writes
+        ..enqueue(DeleteOp('users', owner.id))
+        ..enqueue(const DeleteOp('meta', 'setup'));
+      await writes.flush(requireOnline: true);
     }
 
     final setUpBusiness = SetUpBusiness(
@@ -91,54 +128,90 @@ class AppScope {
       writeSampleData: () => writeSampleData(writes),
     );
 
+    final settlePayment = SettlePayment(paymentRepository, cashRepository, auditRepository, notificationRepository);
+    final recordPayment = RecordPayment(customerRepository, paymentRepository, userRepository, auditRepository, notificationRepository, settlePayment);
+
+    final payments = PaymentsController(
+      paymentRepository,
+      saleRepository,
+      recordPayment,
+      settlePayment,
+      RespondToPayment(paymentRepository, auditRepository, notificationRepository),
+      ReversePayment(customerRepository, paymentRepository, cashRepository, userRepository, auditRepository, notificationRepository),
+    );
+
     return AppScope._(
       auth: AuthController(userRepository, authRepo, setUpBusiness, connect: connect, disconnect: disconnect),
       inventory: InventoryController(productRepository, auditRepository, notificationRepository),
-      customers: CustomersController(customerRepository, auditRepository, cashRepository, notificationRepository, userRepository, authRepo),
+      customers: CustomersController(customerRepository, auditRepository, userRepository, authRepo, payments),
+      payments: payments,
       suppliers: SuppliersController(supplierRepository, auditRepository, cashRepository),
       sales: SalesController(saleRepository, productRepository, customerRepository, cashRepository, auditRepository, notificationRepository),
       purchasing: PurchasingController(purchaseRepository, productRepository, supplierRepository, cashRepository, auditRepository, notificationRepository),
       cash: CashController(cashRepository),
-      ordering: OrderingController(orderRepository, productRepository, auditRepository, notificationRepository, userRepository),
+      ordering: OrderingController(orderRepository, productRepository, saleRepository, customerRepository, auditRepository, notificationRepository, userRepository, recordPayment, paymentRepository, writes.flush),
       employees: EmployeesController(userRepository, authRepo, auditRepository),
-      settings: SettingsController(settingsRepository),
+      settings: SettingsController(settingsRepository, authRepo, wipeBackend),
       auditRepository: auditRepository,
       notificationRepository: notificationRepository,
     );
   }
 
   /// Which collections [user] mirrors, and how narrowly. Must stay in step
-  /// with `firestore.rules`: a watch the rules reject fails the login.
-  /// Staff see the whole business; a customer sees the catalogue plus
-  /// their own profile, account, orders and notifications — nothing else.
+  /// with `firestore.rules` (mirrored by the "app load plan" test in
+  /// `firestore_tests/`): a watch the rules reject fails that login.
+  /// - Staff see the whole business (audit log: owner only).
+  /// - Delivery staff see the catalogue, customers (address, balance), and
+  ///   only the orders assigned to them and payments they collected.
+  /// - A customer sees the catalogue plus their own profile, account,
+  ///   bills, payments, orders, delivery codes and notifications.
   static Map<String, ({String? id, Map<String, Object?> where})> _loadPlan(AppUser user) {
     const all = (id: null, where: <String, Object?>{});
-    if (user.role != UserRole.customer) {
-      return {
-        for (final name in [
-          'users', 'products', 'categories', 'stockAdjustments', 'customers', 'suppliers', 'cashLedger', 'expenses',
-          'partnerLedger', 'sales', 'purchases', 'purchaseReturns', 'orders', 'notifications', 'settings',
-          if (user.role == UserRole.owner) 'auditLog',
-        ])
-          name: all,
-      };
+    final own = (id: user.id, where: const <String, Object?>{});
+    final mine = (id: null, where: <String, Object?>{'targetUserId': user.id});
+    switch (user.role) {
+      case UserRole.owner || UserRole.accountant || UserRole.employee:
+        return {
+          for (final name in [
+            'users', 'products', 'productCosts', 'categories', 'stockAdjustments', 'customers', 'suppliers', 'cashLedger', 'expenses',
+            'partnerLedger', 'sales', 'purchases', 'purchaseReturns', 'orders', 'notifications', 'settings', 'customerPayments',
+            if (user.role == UserRole.owner) 'auditLog',
+          ])
+            name: all,
+        };
+      case UserRole.delivery:
+        return {
+          'products': all,
+          'categories': all,
+          'settings': all,
+          'customers': all,
+          'users': own,
+          'orders': (id: null, where: {'assignedToId': user.id}),
+          'customerPayments': (id: null, where: {'collectedById': user.id}),
+          'notifications': mine,
+        };
+      case UserRole.customer:
+        final ofCustomer = (id: null, where: <String, Object?>{'customerId': user.linkedCustomerId ?? ''});
+        return {
+          'products': all,
+          'categories': all,
+          'settings': all,
+          'users': own,
+          'customers': (id: user.linkedCustomerId ?? '', where: const {}),
+          'orders': ofCustomer,
+          'sales': ofCustomer,
+          'customerPayments': ofCustomer,
+          'deliveryCodes': ofCustomer,
+          'notifications': mine,
+        };
     }
-    final customerId = user.linkedCustomerId ?? '';
-    return {
-      'products': all,
-      'categories': all,
-      'settings': all,
-      'users': (id: user.id, where: const {}),
-      'customers': (id: customerId, where: const {}),
-      'orders': (id: null, where: {'customerId': customerId}),
-      'notifications': (id: null, where: {'targetUserId': user.id}),
-    };
   }
 
   AppScope._({
     required this.auth,
     required this.inventory,
     required this.customers,
+    required this.payments,
     required this.suppliers,
     required this.sales,
     required this.purchasing,
@@ -153,6 +226,7 @@ class AppScope {
   final AuthController auth;
   final InventoryController inventory;
   final CustomersController customers;
+  final PaymentsController payments;
   final SuppliersController suppliers;
   final SalesController sales;
   final PurchasingController purchasing;

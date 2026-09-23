@@ -8,6 +8,7 @@ class AuditLogEntry {
     this.entityId = '',
     this.oldValue = '',
     this.newValue = '',
+    this.userId,
   });
 
   final String id;
@@ -18,4 +19,8 @@ class AuditLogEntry {
   final String entityId;
   final String oldValue;
   final String newValue;
+
+  /// The signed-in account that wrote it (enforced by the backend), so an
+  /// entry can't be attributed to someone else by name.
+  final String? userId;
 }

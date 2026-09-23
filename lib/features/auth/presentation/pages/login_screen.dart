@@ -16,7 +16,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
-  late final Future<bool> _isSetUp = widget.auth.isBusinessSetUp().catchError((_) => true);
 
   void _submit() {
     widget.auth.login(_phoneController.text.trim(), _passwordController.text);
@@ -87,7 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => ForgotPasswordScreen(auth: widget.auth),
+                          builder: (_) =>
+                              ForgotPasswordScreen(auth: widget.auth),
                         ),
                       ),
                       child: const Text('Forgot password?'),
@@ -106,25 +106,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           : const Text('Log In'),
                     ),
                   ),
-                  // Only offered while the backend has no business yet; the
-                  // backend itself rejects a second setup regardless.
-                  FutureBuilder<bool>(
-                    future: _isSetUp,
-                    builder: (context, snapshot) => snapshot.data == false
-                        ? Padding(
-                            padding: const EdgeInsets.only(top: 24),
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.add_business_outlined),
-                              label: const Text('Set up a new business'),
-                              onPressed: widget.auth.busy
-                                  ? null
-                                  : () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(builder: (_) => SetupScreen(auth: widget.auth)),
-                                      ),
+                  // Always shown. Setup checks on the server and refuses if a
+                  // business already exists (one business per backend).
+                  Padding(
+                    padding: const EdgeInsets.only(top: 24),
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.add_business_outlined),
+                      label: const Text('Set up a new business'),
+                      onPressed: widget.auth.busy
+                          ? null
+                          : () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => SetupScreen(auth: widget.auth),
+                              ),
                             ),
-                          )
-                        : const SizedBox.shrink(),
+                    ),
                   ),
                 ],
               ),

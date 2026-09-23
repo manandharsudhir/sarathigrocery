@@ -9,6 +9,7 @@ import 'package:sarathigrocery/features/cash/presentation/controllers/cash_contr
 import 'package:sarathigrocery/features/cash/presentation/pages/cash_screen.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/credit_status.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/payments_screen.dart';
 import 'package:sarathigrocery/features/customers/presentation/pages/customers_screen.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/dashboard_nav.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/widgets/attention_tile.dart';
@@ -48,6 +49,7 @@ class AccountantDashboard extends StatelessWidget {
 
     final profitLoss = sales.totalRevenue - sales.totalCostOfGoods - cash.totalExpensesAllTime;
     final overdue = customers.customers.where((c) => c.creditStatus == CreditStatus.overdue).toList();
+    final toReceive = customers.payments.pendingHandover;
     final suppliersOwed = suppliers.suppliers.where((s) => s.amountPayable > 0).length;
 
     void openLedger([int tab = 0]) => Navigator.push(
@@ -108,10 +110,18 @@ class AccountantDashboard extends StatelessWidget {
           ),
         ),
 
-        if (overdue.isNotEmpty || suppliersOwed > 0) ...[
+        if (overdue.isNotEmpty || suppliersOwed > 0 || toReceive.isNotEmpty) ...[
           const SliverToBoxAdapter(child: SectionHeader('Needs Attention')),
           SliverList.list(
             children: [
+              if (toReceive.isNotEmpty)
+                AttentionTile(
+                  icon: Icons.account_balance_wallet_outlined,
+                  color: Colors.orange,
+                  label: '${formatNpr(toReceive.fold(0.0, (s, p) => s + p.amount))} collected, not yet in the till',
+                  actionLabel: 'Receive',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentsScreen(payments: customers.payments, auth: auth))),
+                ),
               if (overdue.isNotEmpty)
                 AttentionTile(
                   icon: Icons.person_off_outlined,
@@ -188,9 +198,7 @@ class AccountantDashboard extends StatelessWidget {
     }
 
     return entries.map((e) {
-      final isOutflow = e.type == CashEntryType.expense ||
-          e.type == CashEntryType.deposit ||
-          e.type == CashEntryType.supplierPayment;
+      final isOutflow = e.isOutflow;
       return ListTile(
         dense: true,
         leading: Icon(

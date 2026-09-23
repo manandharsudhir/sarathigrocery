@@ -22,6 +22,15 @@ class WriteQueue {
 
   List<WriteOp> _pending = [];
   Future<void>? _scheduled;
+  bool _requireOnline = false;
+
+  /// Called when an online-only commit is refused: every mirror re-applies
+  /// the server's last state, undoing the optimistic local changes (a
+  /// refused online write leaves no trace in the store's own cache, so no
+  /// snapshot would ever undo them).
+  final List<void Function()> _rollbacks = [];
+
+  void onRollback(void Function() rollback) => _rollbacks.add(rollback);
 
   void enqueue(WriteOp op) {
     _pending.add(op);
@@ -32,19 +41,32 @@ class WriteQueue {
 
   /// Commits anything queued now and completes when the backend accepts it.
   /// Only needed where the next step depends on the server already having
-  /// the data (first-run setup); ordinary writes are fire-and-forget.
-  Future<void> flush() => _scheduled ?? Future.value();
+  /// the data (first-run setup, deliveries); ordinary writes are
+  /// fire-and-forget. [requireOnline]: this batch must reach the server
+  /// now; if it can't (offline) or is refused, nothing is saved and local
+  /// state is rolled back.
+  Future<void> flush({bool requireOnline = false}) {
+    if (requireOnline) _requireOnline = true;
+    return _scheduled ?? Future.value();
+  }
 
   Future<void> _commit() async {
     final ops = _pending;
+    final online = _requireOnline;
     _pending = [];
     _scheduled = null;
+    _requireOnline = false;
     for (var i = 0; i < ops.length; i += _maxBatch) {
       final chunk = ops.sublist(i, i + _maxBatch > ops.length ? ops.length : i + _maxBatch);
       try {
-        await store.commit(chunk);
+        await store.commit(chunk, requireOnline: online);
       } catch (e, stack) {
         reportError(e, stack, 'commit of ${chunk.length} writes to ${{for (final op in chunk) op.collection}.join(', ')} failed');
+        if (online) {
+          for (final rollback in _rollbacks) {
+            rollback();
+          }
+        }
         rethrow;
       }
     }

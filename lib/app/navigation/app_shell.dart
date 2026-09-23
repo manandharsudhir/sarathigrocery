@@ -9,6 +9,8 @@ import 'package:sarathigrocery/features/auth/presentation/pages/account_security
 import 'package:sarathigrocery/features/auth/presentation/pages/profile_screen.dart';
 import 'package:sarathigrocery/features/cash/presentation/pages/cash_screen.dart';
 import 'package:sarathigrocery/features/customers/presentation/pages/customers_screen.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/my_collections_screen.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/payments_screen.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/dashboard_nav.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/pages/accountant_dashboard.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/pages/customer_dashboard.dart';
@@ -19,6 +21,7 @@ import 'package:sarathigrocery/features/inventory/presentation/pages/categories_
 import 'package:sarathigrocery/features/inventory/presentation/pages/inventory_screen.dart';
 import 'package:sarathigrocery/features/ordering/presentation/pages/cart_screen.dart';
 import 'package:sarathigrocery/features/ordering/presentation/pages/customer_orders_screen.dart';
+import 'package:sarathigrocery/features/ordering/presentation/pages/deliveries_screen.dart';
 import 'package:sarathigrocery/features/ordering/presentation/pages/products_browse_screen.dart';
 import 'package:sarathigrocery/features/ordering/presentation/pages/staff_orders_screen.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/pages/purchases_screen.dart';
@@ -130,6 +133,19 @@ _RoleNav _navFor(UserRole role, AppScope scope, void Function(int) goToTab) {
           CustomersScreen(controller: scope.customers, auth: scope.auth),
         ],
       );
+    case UserRole.delivery:
+      return _RoleNav(
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.local_shipping_outlined), selectedIcon: Icon(Icons.local_shipping), label: 'Deliveries'),
+          NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined), selectedIcon: Icon(Icons.account_balance_wallet), label: 'Collections'),
+          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Account'),
+        ],
+        screens: [
+          DeliveriesScreen(ordering: scope.ordering, auth: scope.auth),
+          MyCollectionsScreen(payments: scope.payments, auth: scope.auth),
+          ProfileScreen(auth: scope.auth),
+        ],
+      );
     case UserRole.customer:
       final cartCount = scope.ordering.cart.fold<int>(0, (sum, i) => sum + i.qty);
       return _RoleNav(
@@ -174,6 +190,7 @@ _RoleNav _navFor(UserRole role, AppScope scope, void Function(int) goToTab) {
 }
 
 List<MoreMenuItem> _ownerMoreItems(AppScope scope) => [
+      MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth)),
       MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, auth: scope.auth)),
       MoreMenuItem(icon: Icons.people_outline, label: 'Customers', builder: (_) => CustomersScreen(controller: scope.customers, auth: scope.auth)),
       MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, auth: scope.auth)),
@@ -184,11 +201,12 @@ List<MoreMenuItem> _ownerMoreItems(AppScope scope) => [
       MoreMenuItem(icon: Icons.bar_chart_outlined, label: 'Reports', builder: (_) => ReportsScreen(sales: scope.sales, purchasing: scope.purchasing, cash: scope.cash, inventory: scope.inventory, customers: scope.customers, suppliers: scope.suppliers)),
       MoreMenuItem(icon: Icons.badge_outlined, label: 'Employees', builder: (_) => EmployeesScreen(controller: scope.employees, auth: scope.auth)),
       MoreMenuItem(icon: Icons.fact_check_outlined, label: 'Audit Log', builder: (_) => AuditLogScreen(repository: scope.auditRepository)),
-      MoreMenuItem(icon: Icons.settings_outlined, label: 'Settings', builder: (_) => BusinessSettingsScreen(controller: scope.settings)),
+      MoreMenuItem(icon: Icons.settings_outlined, label: 'Settings', builder: (_) => BusinessSettingsScreen(controller: scope.settings, auth: scope.auth)),
       MoreMenuItem(icon: Icons.account_circle_outlined, label: 'My Account', builder: (_) => ProfileScreen(auth: scope.auth)),
     ];
 
 List<MoreMenuItem> _accountantMoreItems(AppScope scope) => [
+      MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth)),
       MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, auth: scope.auth)),
       MoreMenuItem(icon: Icons.people_outline, label: 'Customers', builder: (_) => CustomersScreen(controller: scope.customers, auth: scope.auth)),
       MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, auth: scope.auth)),

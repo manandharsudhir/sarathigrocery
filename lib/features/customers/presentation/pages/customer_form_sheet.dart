@@ -12,6 +12,7 @@ void showCustomerFormSheet(BuildContext context, CustomersController controller,
   final location = TextEditingController(text: existing?.location);
   final limit = TextEditingController(text: existing?.creditLimit.toStringAsFixed(0));
   final discount = TextEditingController(text: existing == null ? '0' : existing.defaultDiscountPercent.toString());
+  final opening = TextEditingController(text: '0');
   String? error;
 
   showModalBottomSheet(
@@ -39,6 +40,14 @@ void showCustomerFormSheet(BuildContext context, CustomersController controller,
                 Expanded(child: TextField(controller: discount, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Default discount %'))),
               ],
             ),
+            if (existing == null) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: opening,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Existing udharo (opening balance, NPR)', helperText: 'What they already owe from before. Fixed once saved.'),
+              ),
+            ],
             if (error != null) ...[
               const SizedBox(height: 8),
               Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -48,6 +57,7 @@ void showCustomerFormSheet(BuildContext context, CustomersController controller,
               width: double.infinity,
               child: FilledButton(
                 onPressed: () {
+                  final openingBalance = double.tryParse(opening.text.trim()) ?? 0;
                   final creditLimit = double.tryParse(limit.text.trim());
                   final discountPercent = double.tryParse(discount.text.trim());
                   if (name.text.trim().isEmpty || phone.text.trim().isEmpty) {
@@ -64,7 +74,7 @@ void showCustomerFormSheet(BuildContext context, CustomersController controller,
                   }
                   final userName = auth.currentUser?.name ?? '';
                   if (existing == null) {
-                    controller.createCustomer(name: name.text.trim(), phone: phone.text.trim(), location: location.text.trim(), creditLimit: creditLimit, defaultDiscountPercent: discountPercent, userName: userName);
+                    controller.createCustomer(name: name.text.trim(), phone: phone.text.trim(), location: location.text.trim(), creditLimit: creditLimit, defaultDiscountPercent: discountPercent, openingBalance: openingBalance, userName: userName);
                   } else {
                     controller.updateCustomer(existing, name: name.text.trim(), phone: phone.text.trim(), location: location.text.trim(), creditLimit: creditLimit, defaultDiscountPercent: discountPercent, userName: userName);
                   }

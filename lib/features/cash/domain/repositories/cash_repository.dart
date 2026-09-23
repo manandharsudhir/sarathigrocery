@@ -12,11 +12,13 @@ abstract class CashRepository {
 
   double get cashInHand;
 
+  double balanceOf(LedgerAccount account);
+
   double get todayExpenses;
 
   double get totalExpensesAllTime;
 
-  void addLedgerEntry({required CashEntryType type, required double amount, required String note, String reference = ''});
+  void addLedgerEntry({required CashEntryType type, required double amount, required String note, String reference = '', LedgerAccount account = LedgerAccount.cash});
 
   void addExpense(String category, double amount, String note, {String createdByName = ''});
 

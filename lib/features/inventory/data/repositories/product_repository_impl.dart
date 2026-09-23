@@ -13,7 +13,6 @@ Json _productToJson(Product p) => {
       'sku': p.sku,
       'brand': p.brand,
       'unitPrice': p.unitPrice,
-      'purchasePrice': p.purchasePrice,
       'retailPrice': p.retailPrice,
       'unit': p.unit.name,
       'customUnitLabel': p.customUnitLabel,
@@ -38,7 +37,6 @@ void _mergeProduct(Product p, Json j) {
     ..sku = j['sku'] ?? ''
     ..brand = j['brand'] ?? ''
     ..unitPrice = toDouble(j['unitPrice'])
-    ..purchasePrice = toDouble(j['purchasePrice'])
     ..retailPrice = (j['retailPrice'] as num?)?.toDouble()
     ..unit = ProductUnit.values.byName(j['unit'] ?? ProductUnit.piece.name)
     ..customUnitLabel = j['customUnitLabel'] ?? ''
@@ -60,6 +58,20 @@ class ProductRepositoryImpl implements ProductRepository {
     counters: {'stockQty', 'reservedQty'},
   );
 
+  /// Cost prices live apart from the catalogue so customers (who read
+  /// `products`) never see margins. Items are the same Product objects.
+  late final _costs = SyncedCollection<Product>(
+    'productCosts',
+    idOf: (p) => p.id,
+    toJson: (p) => {'purchasePrice': p.purchasePrice},
+    fromJson: (j) {
+      final product = _products.byId(j['id']);
+      product?.purchasePrice = toDouble(j['purchasePrice']);
+      return product;
+    },
+    merge: (p, j) => p.purchasePrice = toDouble(j['purchasePrice']),
+  );
+
   final _categories = SyncedCollection<String>(
     'categories',
     idOf: (name) => name,
@@ -79,7 +91,7 @@ class ProductRepositoryImpl implements ProductRepository {
   );
 
   /// [products] first: the other collections resolve references into it.
-  List<SyncedCollection<Object?>> get collections => [_products, _categories, _adjustments];
+  List<SyncedCollection<Object?>> get collections => [_products, _costs, _categories, _adjustments];
 
   @override
   List<Product> get products => _products.items;
@@ -91,6 +103,24 @@ class ProductRepositoryImpl implements ProductRepository {
   List<StockAdjustment> get adjustments => _adjustments.items;
 
   Product? byId(String? id) => _products.byId(id);
+
+  /// Products created before cost prices moved to `productCosts` still carry
+  /// `purchasePrice` on the catalogue doc (visible to customers, and the
+  /// access rules refuse every update to such docs). Owner login moves them.
+  int migrateLegacyCosts() {
+    var moved = 0;
+    for (final product in products) {
+      final legacy = _products.serverDoc(product.id)?['purchasePrice'];
+      if (legacy == null) continue;
+      if (_costs.serverDoc(product.id) == null) {
+        product.purchasePrice = toDouble(legacy);
+        _costs.add(product);
+      }
+      _products.clearField(product, 'purchasePrice');
+      moved++;
+    }
+    return moved;
+  }
 
   @override
   int get lowStockCount => products.where((p) => p.isLowStock).length;
@@ -144,6 +174,7 @@ class ProductRepositoryImpl implements ProductRepository {
       expiryDate: expiryDate,
     );
     _products.add(product);
+    _costs.add(product);
     return product;
   }
 
@@ -178,6 +209,7 @@ class ProductRepositoryImpl implements ProductRepository {
     if (isActive != null) product.isActive = isActive;
     if (expiryDate != null) product.expiryDate = expiryDate;
     _products.save(product);
+    if (purchasePrice != null) _costs.save(product);
   }
 
   void _changeStock(Product product, {int stock = 0, int reserved = 0}) {

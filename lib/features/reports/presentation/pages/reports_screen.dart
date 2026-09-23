@@ -388,7 +388,7 @@ class _PaymentReportScreenState extends State<_PaymentReportScreen> {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
-              children: entries.map((e) => ListTile(dense: true, title: Text(e.note), subtitle: Text('${e.type.name} · ${formatDate(e.date)}'), trailing: Text(formatNpr(e.amount)))).toList(),
+              children: entries.map((e) => ListTile(dense: true, title: Text(e.note), subtitle: Text('${e.account.name} · ${e.type.name} · ${formatDate(e.date)}'), trailing: Text('${e.isOutflow ? '-' : '+'}${formatNpr(e.amount)}'))).toList(),
             ),
           ),
         ],

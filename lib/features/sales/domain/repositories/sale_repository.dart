@@ -20,6 +20,7 @@ abstract class SaleRepository {
     required bool flaggedForApproval,
     String? createdByUserId,
     String createdByName,
+    String? orderId,
   });
 
   void setStatus(Sale sale, SaleStatus status);

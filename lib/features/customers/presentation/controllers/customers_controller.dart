@@ -5,22 +5,21 @@ import 'package:sarathigrocery/features/audit/domain/repositories/audit_reposito
 import 'package:sarathigrocery/features/auth/domain/entities/app_user.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/auth_repository.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/user_repository.dart';
-import 'package:sarathigrocery/features/cash/domain/repositories/cash_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/customers/domain/repositories/customer_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/usecases/create_customer_login.dart';
-import 'package:sarathigrocery/features/customers/domain/usecases/record_payment.dart';
-import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
+import 'package:sarathigrocery/features/customers/presentation/controllers/payments_controller.dart';
 
 class CustomersController extends ChangeNotifier {
-  CustomersController(this._repository, this._audit, CashRepository cash, NotificationRepository notifications, this._users, AuthRepository auth)
-      : _recordPayment = RecordPayment(_repository, cash, _audit, notifications),
-        _createLogin = CreateCustomerLogin(_users, auth, _audit);
+  CustomersController(this._repository, this._audit, this._users, AuthRepository auth, this.payments) : _createLogin = CreateCustomerLogin(_users, auth, _audit);
+
+  /// Payments/statements for these customers (exposed here so customer
+  /// screens don't need a second controller threaded through every caller).
+  final PaymentsController payments;
 
   final CustomerRepository _repository;
   final AuditRepository _audit;
   final UserRepository _users;
-  final RecordPayment _recordPayment;
   final CreateCustomerLogin _createLogin;
 
   CustomerRepository get repository => _repository;
@@ -31,15 +30,9 @@ class CustomersController extends ChangeNotifier {
 
   AppUser? loginFor(Customer customer) => _users.userForCustomer(customer.id);
 
-  void recordPayment(Customer customer, double amount, String note, {required String userName}) {
-    _recordPayment(customer, amount, note, userName: userName);
-    notifyListeners();
-    AppSignal.instance.ping();
-  }
-
-  Customer createCustomer({required String name, required String phone, required String location, required double creditLimit, double defaultDiscountPercent = 0, required String userName}) {
-    final customer = _repository.create(name: name, phone: phone, location: location, creditLimit: creditLimit, defaultDiscountPercent: defaultDiscountPercent);
-    _audit.record(userName, 'Customer added', 'Customer', entityId: customer.id, newValue: name);
+  Customer createCustomer({required String name, required String phone, required String location, required double creditLimit, double defaultDiscountPercent = 0, double openingBalance = 0, required String userName}) {
+    final customer = _repository.create(name: name, phone: phone, location: location, creditLimit: creditLimit, defaultDiscountPercent: defaultDiscountPercent, openingBalance: openingBalance);
+    _audit.record(userName, 'Customer added', 'Customer', entityId: customer.id, newValue: openingBalance == 0 ? name : '$name (opening balance ${openingBalance.toStringAsFixed(0)})');
     notifyListeners();
     AppSignal.instance.ping();
     return customer;

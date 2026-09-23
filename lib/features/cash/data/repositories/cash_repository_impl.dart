@@ -10,8 +10,16 @@ class CashRepositoryImpl implements CashRepository {
   final _ledger = SyncedCollection<CashLedgerEntry>(
     'cashLedger',
     idOf: (e) => e.id,
-    toJson: (e) => {'date': toMillis(e.date), 'type': e.type.name, 'amount': e.amount, 'note': e.note, 'reference': e.reference},
-    fromJson: (j) => CashLedgerEntry(id: j['id'], date: fromMillis(j['date']), type: CashEntryType.values.byName(j['type']), amount: toDouble(j['amount']), note: j['note'] ?? '', reference: j['reference'] ?? ''),
+    toJson: (e) => {'date': toMillis(e.date), 'type': e.type.name, 'amount': e.amount, 'note': e.note, 'reference': e.reference, 'account': e.account.name},
+    fromJson: (j) => CashLedgerEntry(
+      id: j['id'],
+      date: fromMillis(j['date']),
+      type: CashEntryType.values.byName(j['type']),
+      amount: toDouble(j['amount']),
+      note: j['note'] ?? '',
+      reference: j['reference'] ?? '',
+      account: LedgerAccount.values.byName(j['account'] ?? LedgerAccount.cash.name),
+    ),
   );
 
   final _expenses = SyncedCollection<Expense>(
@@ -40,16 +48,10 @@ class CashRepositoryImpl implements CashRepository {
   List<PartnerLedgerEntry> get partnerLedger => _partnerLedger.items;
 
   @override
-  double get cashInHand => ledger.fold(0.0, (sum, e) {
-        switch (e.type) {
-          case CashEntryType.expense:
-          case CashEntryType.deposit:
-          case CashEntryType.supplierPayment:
-            return sum - e.amount;
-          default:
-            return sum + e.amount;
-        }
-      });
+  double get cashInHand => balanceOf(LedgerAccount.cash);
+
+  @override
+  double balanceOf(LedgerAccount account) => ledger.where((e) => e.account == account).fold(0.0, (sum, e) => sum + e.signedAmount);
 
   @override
   double get todayExpenses {
@@ -63,8 +65,8 @@ class CashRepositoryImpl implements CashRepository {
   double get totalExpensesAllTime => expenses.fold(0.0, (sum, e) => sum + e.amount);
 
   @override
-  void addLedgerEntry({required CashEntryType type, required double amount, required String note, String reference = ''}) {
-    _ledger.add(CashLedgerEntry(id: nextId('L'), date: DateTime.now(), type: type, amount: amount, note: note, reference: reference));
+  void addLedgerEntry({required CashEntryType type, required double amount, required String note, String reference = '', LedgerAccount account = LedgerAccount.cash}) {
+    _ledger.add(CashLedgerEntry(id: nextId('L'), date: DateTime.now(), type: type, amount: amount, note: note, reference: reference, account: account));
   }
 
   @override

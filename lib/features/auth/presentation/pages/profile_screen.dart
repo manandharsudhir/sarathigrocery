@@ -12,6 +12,8 @@ String roleLabel(UserRole role) {
       return 'Accountant';
     case UserRole.employee:
       return 'Shop Employee';
+    case UserRole.delivery:
+      return 'Delivery';
     case UserRole.customer:
       return 'Wholesale Customer';
   }

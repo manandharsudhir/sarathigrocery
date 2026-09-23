@@ -33,9 +33,34 @@ Production Flutter app on Firebase (Firestore + Firebase Auth + Crashlytics), bu
 
 **Password reset.** A user verifies their phone once (Account screen, or the banner in `AppShell`), which links a Firebase phone credential to their login. After that, "Forgot password" sends an OTP, and the OTP sign-in lands in the same account, which then sets a new password. OTP reset is refused for unverified phones (their phone-only account is deleted immediately). Phones are local numbers; `FirebaseAuthRepository._countryCode` is `+977`.
 
-**Enforcement.** `firestore.rules` enforces roles/permissions server-side and mirrors `Permission` defaults plus per-user overrides. Staff read the whole business; every write needs the permission the UI checks. Customers read the catalogue plus their own profile/account/orders/notifications, and can only place orders. Ledgers and the audit log are append-only. The UI's `auth.can(...)` checks are UX only; the rules are the real gate. Tests: `firestore_tests/` (21 cases, emulator).
+**Enforcement.** `firestore.rules` enforces roles/permissions server-side and mirrors `Permission` defaults plus per-user overrides. Staff read the whole business; every write needs the permission the UI checks. Customers read the catalogue plus their own profile/account/orders/notifications, and can only place orders. Ledgers and the audit log are append-only. The UI's `auth.can(...)` checks are UX only; the rules are the real gate. Tests: `firestore_tests/` (34 cases plus the replay of real app writes, emulator).
 
 **Monitoring.** `reportError` (`lib/core/services/error_reporter.dart`) is set to Crashlytics in `main.dart` (not on web). Uncaught Flutter/platform errors are recorded as fatal. Collection is off in debug builds.
+
+## Orders, payments and verification
+
+Money only moves through records that can't be edited; balances are backed by them.
+
+- **Delivery invoices.** `AdvanceOrderStatus` → delivered deducts stock AND records an invoice (credit `Sale` with `orderId`) and adds it to `outstandingBalance`. Any payment is a separate `CustomerPayment` (`customers` feature, collection `customerPayments`).
+- **Deliver & collect** (`OrderingController.deliverAndCollect`) is **online-only**. It commits delivery + invoice + payment with `WriteQueue.flush(requireOnline: true)`, which is a Firestore transaction: it never queues offline and fails with `OfflineException`. On any failure nothing is saved, and every mirror rolls back to the server's last state (`SyncedCollection._rollback`).
+- **Delivery code:** 6 digits, stored in `deliveryCodes/{orderId}` and readable only by the ordering customer. It's optional in the form; without it the customer confirms in the app later. The code is checked in three online commits, each with its own error message:
+  1. Register attempt n+1 in `codeChecks/{orderId}` (max `kMaxDeliveryCodeAttempts` = 5).
+  2. Claim `verified: true`. The rules refuse this unless the registered code is the real one, so this is the "wrong code" error.
+  3. The delivery batch. A payment may only quote a verified code.
+
+  The owner unlocks a locked order with "Unlock delivery code" (`resetCodeAttempts`). Owner/employee delivering an order not assigned to them take it over first (`assign`), because the rules only let the assigned deliverer check codes and invoice.
+- **Two-sided verification on every payment:**
+  - *Customer side:* confirmed by code at the door, or later in the app (`RespondToPayment.confirm`/`dispute`).
+  - *Business side:* "settled" by someone with `reconcileCash` counting it in (`SettlePayment`). Collectors can't receive their own collection; the owner is the exception. Counted < collected = shortfall, which is audited and notified. On settlement the counted amount enters the ledger on its account (`ledgerAccountFor`: cash / wallet / bank for bank+cheque). Owners/accountants collecting themselves settle immediately.
+- **Allocation** is derived, never stored: `buildStatement` (`customer_statement.dart`) pays the linked order first, then the oldest bills. The opening balance counts as the oldest. `Customer.openingBalance` (fixed at creation) lets the statement prove `outstandingBalance == opening + bills − payments`. `balanced == false` means something moved a balance outside these flows, and it's surfaced on the owner dashboard and to the customer.
+- **Corrections:** owner-only `ReversePayment`, at any time. The payment stays visible, marked reversed, and the balance goes back up. If it was already settled, a `CashEntryType.refund` entry takes the counted amount back out of its account.
+- **Ledger accounts:** `CashLedgerEntry.account` is `LedgerAccount` cash/bank/wallet. Use `isOutflow`/`signedAmount`; don't re-derive signs from `type`. A bank deposit is two entries (cash out, bank in).
+- **Legacy orders:** delivered orders with no invoice appear as an owner Needs Attention item ("never billed", `invoiceUninvoicedDeliveries`).
+- **Cost prices** live in staff-only `productCosts/{productId}` (same `Product` objects, merged by `ProductRepositoryImpl._costs`). The rules reject `purchasePrice` on `products`. Customers and delivery staff see `purchasePrice == 0`.
+- **Business reset** (Settings → Danger zone, owner only): the owner must type the business name and re-enter their password (`AuthRepository.verifyPassword`), and it runs online-only. `wipeBackend` in `AppScope` lists every collection via `RemoteStore.listIds`, deletes all of it, and deletes the owner's profile + `meta/setup` in the final commit. Delivery codes are deleted by order id because the owner can't read them. The rules give the owner `delete` on every collection solely for this. Logins (Firebase Auth) survive; `SetUpBusiness` reuses an existing login for the phone when the password matches. When adding a collection, it's covered automatically if it's in `AppScope`'s `collections`; add an owner `allow delete` rule for it.
+- **Audit entries** carry `userId`, which the rules require to equal the signed-in account.
+- **Roles:** `UserRole.delivery` has `deliverOrders` only. It sees customers and its assigned orders/collections (`DeliveriesScreen`, `MyCollectionsScreen`). Owner and employee also have `deliverOrders`. `reconcileCash`: owner, accountant. `PlaceOrder` flags `overCreditLimit` (balance + open orders + this order > limit).
+- `FirestoreRemoteStore.commit` coalesces multiple writes to one document into one write, because rules judge each write separately (e.g. create payment + settle it).
 
 ## Backend seam
 
@@ -51,7 +76,9 @@ Repositories stay **synchronous** on top of `SyncedCollection<T>` (`lib/core/dat
 - Every mutation of a persisted entity must go through its repository (`add`/`save`/`increment`). A direct field mutation changes only this device.
 - Don't `await` inside a use case between writes that must be atomic. An `await` splits the batch.
 - `_loadPlan` and `firestore.rules` must agree. A watch the rules reject fails that role's login. `firestore_tests` has an "app load plan" test mirroring `_loadPlan`: update both together.
-- `save()` writes all non-counter fields, and rules compare *changed* keys. Documents must therefore contain every field `toJson` writes (see the defaults in `sample_data.dart`), or a later save looks like it adds fields and staff-only-field rules reject it.
+- `save()` sends only fields that differ from the server's last copy (`serverDoc`). That keeps rule `changedOnly(...)` checks honest even for older documents that lack newer fields. Use `patch` for raw partial writes and `clearField` for migrations.
+- **Data migrations for older versions** run on owner login in `AppScope.connect` (currently: move `products.purchasePrice` into `productCosts`).
+- **Rules vs. real writes:** `test/rules_fixture_test.dart` drives a full business day through the app on separate devices (`InMemoryAuthRepository.forDevice()`), records every commit with its author, and writes `firestore_tests/fixtures/app_writes.json`. `firestore_tests/replay.test.js` replays it against the rules in the emulator. Run the Dart test first, then the emulator suite. When adding a write path, add it to that scenario.
 - Remote snapshots are merged **in place** (entities reference each other by object). New mutable fields need adding to `merge`.
 - Concurrently changed numbers (stock, reserved qty, customer balance, supplier payable) use `increment` and are listed in `counters`.
 - Cross-references are stored as ids and resolved via `byId` in `fromJson`. Unresolved docs are retried automatically.
@@ -81,12 +108,12 @@ lib/
 └── features/
     ├── auth/               UserRole, Permission, AppUser, login, AuthController
     ├── inventory/          Product, categories, stock adjustments
-    ├── customers/          Customer, credit status, payment recording
+    ├── customers/          Customer, credit status, CustomerPayment, statements, handover
     ├── suppliers/          Supplier, payable
     ├── purchasing/         Purchase, receiving stock, purchase returns
     ├── sales/              Sale, record/cancel/return, invoices
     ├── cash/               cash ledger, expenses, partner capital
-    ├── ordering/           cart, CustomerOrder, order lifecycle
+    ├── ordering/           cart, CustomerOrder, order lifecycle, delivery assignment + codes
     ├── employees/          employee accounts + permission editing (uses auth's UserRepository)
     ├── settings/           business settings
     ├── notifications/      presentation-only consumer of NotificationRepository (no controller — see below)
@@ -128,7 +155,7 @@ Conventions to preserve when touching these:
 
 ## Testing
 
-`test/business_logic_test.dart` builds a real in-memory business (`TestBusiness.create()` runs first-run setup and creates one login per role; `signedIn(role)` / `business.device(role)`) and exercises controllers directly (sale cancel/return reversal, purchase stock+payable math, order reservation/finalization, permission defaults/overrides, audit logging, two-device sync, one-batch-per-operation, customer data scoping, setup-once, password change/OTP reset, customer management) — no widget pumping, no Firebase. The in-memory store enforces **no** rules; rules are tested separately in `firestore_tests/` (`firebase emulators:exec --only firestore --project demo-sarathi "cd firestore_tests && npm test"`). Prefer adding logic tests there over widget tests; reserve `test/widget_test.dart` for things only a widget tree can verify (navigation, rendering).
+`test/business_logic_test.dart` builds a real in-memory business (`TestBusiness.create()` runs first-run setup and creates one login per role; `signedIn(role)` / `business.device(role)`) and exercises controllers directly (sale cancel/return reversal, purchase stock+payable math, order reservation/finalization, permission defaults/overrides, audit logging, two-device sync, one-batch-per-operation, customer data scoping, setup-once, password change/OTP reset, customer management, and the payment flows: door collection with split allocation, handover/shortfall, separation of duties, confirm/dispute/reverse, tamper detection, credit-limit flag, offline refusal + rollback, code lockout, settled reversal/refund, bank/wallet accounts, legacy billing, cost privacy). `InMemoryRemoteStore.online` / `.rejectIf` simulate no connection / server rejection — no widget pumping, no Firebase. The in-memory store enforces **no** rules; rules are tested separately in `firestore_tests/` (`firebase emulators:exec --only firestore --project demo-sarathi "cd firestore_tests && npm test"`). Prefer adding logic tests there over widget tests; reserve `test/widget_test.dart` for things only a widget tree can verify (navigation, rendering).
 
 ## Conventions
 

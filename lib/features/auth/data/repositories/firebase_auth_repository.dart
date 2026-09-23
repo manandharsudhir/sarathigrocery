@@ -88,6 +88,19 @@ class FirebaseAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<bool> verifyPassword(String password) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+    try {
+      await user.reauthenticateWithCredential(EmailAuthProvider.credential(email: user.email!, password: password));
+      return true;
+    } on FirebaseAuthException catch (e) {
+      if (_badCredentials.contains(e.code)) return false;
+      throw _wrap(e);
+    }
+  }
+
+  @override
   bool get phoneVerified => _auth.currentUser?.phoneNumber != null;
 
   // ---- OTP plumbing. Mobile uses verifyPhoneNumber (verification id +

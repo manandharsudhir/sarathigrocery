@@ -5,7 +5,8 @@ abstract class CustomerRepository {
 
   double get totalOutstanding;
 
-  Customer create({required String name, required String phone, required String location, required double creditLimit, double defaultDiscountPercent = 0});
+  /// [openingBalance]: udharo carried over from before the app.
+  Customer create({required String name, required String phone, required String location, required double creditLimit, double defaultDiscountPercent = 0, double openingBalance = 0});
 
   /// Persists edited profile fields (not the balance — see [applyBalanceChange]).
   void update(Customer customer);

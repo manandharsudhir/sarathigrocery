@@ -6,6 +6,9 @@ import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/credit_status.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/customer_statement_screen.dart';
+import 'package:sarathigrocery/features/customers/presentation/widgets/payment_widgets.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/pages/customer_form_sheet.dart';
 
@@ -30,9 +33,10 @@ class CustomerDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: Listenable.merge([controller, controller.payments]),
       builder: (context, _) {
         final (label, color) = creditStatusVisual(customer.creditStatus);
+        final statement = controller.payments.statementFor(customer);
         final canManage = auth.can(Permission.manageCustomers);
         final login = controller.loginFor(customer);
 
@@ -54,6 +58,10 @@ class CustomerDetailScreen extends StatelessWidget {
               Row(
                 children: [
                   StatusBadge(label: label, color: color),
+                  if (!statement.balanced) ...[
+                    const SizedBox(width: 8),
+                    const StatusBadge(label: "Balance doesn't match records", color: Colors.red),
+                  ],
                 ],
               ),
               const SizedBox(height: 16),
@@ -73,6 +81,12 @@ class CustomerDetailScreen extends StatelessWidget {
                 icon: const Icon(Icons.payments),
                 label: const Text('Collect Payment'),
               ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CustomerStatementScreen(customer: customer, payments: controller.payments, auth: auth))),
+                icon: const Icon(Icons.receipt_long_outlined),
+                label: const Text('Statement'),
+              ),
               if (canManage && login == null) ...[
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
@@ -90,48 +104,18 @@ class CustomerDetailScreen extends StatelessWidget {
 }
 
 void showCollectPaymentSheet(BuildContext context, Customer customer, CustomersController controller, AuthController auth) {
-  final amountController = TextEditingController();
-  final noteController = TextEditingController(text: 'Cash');
-
   showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Collect from ${customer.name}', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountController,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Amount received (NPR)'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: noteController,
-              decoration: const InputDecoration(labelText: 'Method / note (Cash, Cheque, ...)'),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () {
-                  final amount = double.tryParse(amountController.text) ?? 0;
-                  if (amount <= 0) return;
-                  controller.recordPayment(customer, amount, noteController.text, userName: auth.currentUser?.name ?? '');
-                  Navigator.pop(context);
-                },
-                child: const Text('Record Payment'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => CollectPaymentForm(
+      customer: customer,
+      submitLabel: 'Record Payment',
+      onSubmit: (amount, method, reference, _) async {
+        final payment = controller.payments.record(customer, amount, method: method, reference: reference, collector: auth.currentUser!);
+        return payment.isSettled ? 'Payment recorded.' : 'Payment recorded — hand the ${method == PaymentMethod.cash ? 'cash' : 'reference'} to the owner/accountant.';
+      },
+    ),
+  );
 }
 
 class _InfoRow extends StatelessWidget {

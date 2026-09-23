@@ -22,6 +22,10 @@ class CashController extends ChangeNotifier {
 
   double get cashInHand => _repository.cashInHand;
 
+  double get bankBalance => _repository.balanceOf(LedgerAccount.bank);
+
+  double get walletBalance => _repository.balanceOf(LedgerAccount.wallet);
+
   double get todayExpenses => _repository.todayExpenses;
 
   double get totalExpensesAllTime => _repository.totalExpensesAllTime;
@@ -32,8 +36,11 @@ class CashController extends ChangeNotifier {
     AppSignal.instance.ping();
   }
 
+  /// Cash taken to the bank: leaves the till, arrives in the bank account.
   void addBankDeposit(double amount, String note) {
-    _repository.addLedgerEntry(type: CashEntryType.deposit, amount: amount, note: note.isEmpty ? 'Bank deposit' : note);
+    final text = note.isEmpty ? 'Bank deposit' : note;
+    _repository.addLedgerEntry(type: CashEntryType.deposit, amount: amount, note: text);
+    _repository.addLedgerEntry(type: CashEntryType.deposit, amount: amount, note: text, account: LedgerAccount.bank);
     notifyListeners();
     AppSignal.instance.ping();
   }

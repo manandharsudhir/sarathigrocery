@@ -58,7 +58,16 @@ class SyncedCollection<T> {
 
   /// Where writes go. Separate from [attach]: a role may write to a
   /// collection it may not read (customers append audit entries).
-  void bind(WriteQueue writes) => _writes = writes;
+  void bind(WriteQueue writes) {
+    _writes = writes;
+    writes.onRollback(_rollback);
+  }
+
+  /// Back to the last state the server sent, in place.
+  void _rollback() {
+    _apply(_lastDocs);
+    AppSignal.instance.ping();
+  }
 
   /// Starts mirroring — the whole collection, or only document [id], or only
   /// documents matching [where] (what a restricted role is allowed to see).
@@ -144,10 +153,31 @@ class SyncedCollection<T> {
     _writes?.enqueue(PutOp(name, idOf(item), toJson(item)));
   }
 
-  /// Persists mutable non-counter fields of an already-added [item].
+  /// Persists changed non-counter fields of an already-added [item]: only
+  /// fields that differ from the server's copy are sent. Besides being
+  /// smaller, this matters for access rules that compare changed keys — a
+  /// field missing on an older document (e.g. `openingBalance`) is null on
+  /// both sides, so re-saving never looks like "adding" it.
   void save(T item) {
     final json = toJson(item)..removeWhere((key, _) => counters.contains(key));
+    final server = serverDoc(idOf(item));
+    if (server != null) json.removeWhere((key, value) => _jsonEquals(value, server[key]));
+    if (json.isEmpty) return;
     _writes?.enqueue(PutOp(name, idOf(item), json));
+  }
+
+  /// Merges [data] into document [id] on the server, bypassing the mirror.
+  void patch(String id, Json data) => _writes?.enqueue(PutOp(name, id, data));
+
+  /// Nulls a field on the server (data migrations).
+  void clearField(T item, String field) => patch(idOf(item), {field: null});
+
+  /// The last version of document [id] the server sent (mirrored collections only).
+  Json? serverDoc(String id) {
+    for (final doc in _lastDocs) {
+      if (doc['id'] == id) return doc;
+    }
+    return null;
   }
 
   /// Caller has already applied the deltas locally; this makes them durable.
@@ -157,4 +187,23 @@ class SyncedCollection<T> {
     items.remove(item);
     _writes?.enqueue(DeleteOp(name, idOf(item)));
   }
+}
+
+bool _jsonEquals(Object? a, Object? b) {
+  if (a is num && b is num) return a == b; // 3200 == 3200.0
+  if (a is List && b is List) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_jsonEquals(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (a is Map && b is Map) {
+    if (a.length != b.length) return false;
+    for (final key in a.keys) {
+      if (!b.containsKey(key) || !_jsonEquals(a[key], b[key])) return false;
+    }
+    return true;
+  }
+  return a == b;
 }

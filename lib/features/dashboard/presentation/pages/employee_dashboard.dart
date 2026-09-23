@@ -4,6 +4,7 @@ import 'package:sarathigrocery/app/widgets/dashboard_actions.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/my_collections_screen.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/dashboard_nav.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/widgets/section_header.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
@@ -71,6 +72,28 @@ class EmployeeDashboard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: _TodayStrip(count: todaysSales.length, total: todaysSales.fold(0.0, (sum, s) => sum + s.total)),
           ),
+        ),
+
+        // Money I collected (door or counter) that the shop hasn't counted in yet.
+        SliverToBoxAdapter(
+          child: Builder(builder: (context) {
+            final holding = customers.payments.pendingHandoverBy(auth.currentUser?.id ?? '');
+            if (holding.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Card(
+                elevation: 0,
+                color: Theme.of(context).colorScheme.tertiaryContainer,
+                child: ListTile(
+                  leading: const Icon(Icons.account_balance_wallet_outlined),
+                  title: Text('You hold ${formatNpr(holding.fold(0.0, (s, p) => s + p.amount))} to hand over'),
+                  subtitle: Text('${holding.length} collection${holding.length == 1 ? '' : 's'} not yet received by the owner/accountant'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MyCollectionsScreen(payments: customers.payments, auth: auth))),
+                ),
+              ),
+            );
+          }),
         ),
 
         SliverToBoxAdapter(
@@ -243,8 +266,10 @@ class _OrderQueueCard extends StatelessWidget {
                   if (next != null)
                     Expanded(
                       child: FilledButton(
-                        onPressed: () => ordering.advanceOrderStatus(order, next, userName: auth.currentUser?.name ?? ''),
-                        child: Text('Mark ${orderStatusLabel(next)}'),
+                        onPressed: () => next == OrderStatus.delivered
+                            ? showDeliverSheet(context, order, ordering, auth)
+                            : ordering.advanceOrderStatus(order, next, userName: auth.currentUser?.name ?? '', userId: auth.currentUser?.id),
+                        child: Text(next == OrderStatus.delivered ? 'Deliver & Collect' : 'Mark ${orderStatusLabel(next)}'),
                       ),
                     ),
                   if (next != null) const SizedBox(width: 8),

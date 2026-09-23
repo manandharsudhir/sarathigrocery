@@ -15,7 +15,10 @@ class CustomerOrder {
     this.status = OrderStatus.placed,
     required this.createdDate,
     required this.updatedDate,
-    this.paid = false,
+    this.placedByUserId,
+    this.assignedToId,
+    this.assignedToName = '',
+    this.overCreditLimit = false,
   });
 
   final String id;
@@ -28,7 +31,17 @@ class CustomerOrder {
   OrderStatus status;
   final DateTime createdDate;
   DateTime updatedDate;
-  bool paid;
+
+  /// The customer login that placed it — who gets status/receipt notices.
+  final String? placedByUserId;
+
+  /// Who delivers it (a delivery-role user, or any staff with deliverOrders).
+  String? assignedToId;
+  String assignedToName;
+
+  /// Outstanding balance + open orders + this one exceeded the credit limit
+  /// when placed; staff decide whether to deliver on credit.
+  final bool overCreditLimit;
 
   double get subtotal => items.fold(0.0, (sum, i) => sum + i.lineTotal);
   double get total => subtotal - subtotal * discountPercent / 100;

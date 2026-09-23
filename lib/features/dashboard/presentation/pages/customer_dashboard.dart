@@ -5,6 +5,7 @@ import 'package:sarathigrocery/core/widgets/status_badge.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/customer_statement_screen.dart';
 import 'package:sarathigrocery/features/customers/presentation/pages/customer_detail_screen.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/dashboard_nav.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/widgets/section_header.dart';
@@ -69,6 +70,20 @@ class CustomerDashboard extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: _AccountCard(customer: customer),
                 ),
+                Builder(builder: (context) {
+                  final toConfirm = customers.payments.forCustomer(customer).where((p) => !p.isCustomerConfirmed && !p.isDisputed && !p.isReversed).length;
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: OutlinedButton.icon(
+                      icon: Badge(isLabelVisible: toConfirm > 0, label: Text('$toConfirm'), child: const Icon(Icons.receipt_long_outlined)),
+                      label: Text(toConfirm > 0 ? 'My Statement · $toConfirm payment${toConfirm == 1 ? '' : 's'} to confirm' : 'My Statement'),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => CustomerStatementScreen(customer: customer, payments: customers.payments, auth: auth)),
+                      ),
+                    ),
+                  );
+                }),
 
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),

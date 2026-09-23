@@ -10,6 +10,7 @@ class Customer {
     this.outstandingBalance = 0,
     this.lastPaymentDate,
     this.defaultDiscountPercent = 0,
+    this.openingBalance,
   });
 
   final String id;
@@ -20,6 +21,12 @@ class Customer {
   double outstandingBalance;
   DateTime? lastPaymentDate;
   double defaultDiscountPercent;
+
+  /// Udharo carried in when the customer was added (before any bill or
+  /// payment in this app). Null for records created before this existed.
+  /// Lets the statement prove `outstandingBalance` = opening + bills −
+  /// payments, so an unexplained change to a balance is visible.
+  final double? openingBalance;
 
   CreditStatus get creditStatus {
     if (outstandingBalance > creditLimit) return CreditStatus.overdue;

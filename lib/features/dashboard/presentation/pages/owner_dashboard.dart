@@ -7,12 +7,15 @@ import 'package:sarathigrocery/features/auth/presentation/controllers/auth_contr
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/credit_status.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
+import 'package:sarathigrocery/features/customers/presentation/controllers/payments_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/pages/customers_screen.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/payments_screen.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/dashboard_nav.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/widgets/attention_tile.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/widgets/section_header.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
+import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale_status.dart';
 import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
@@ -92,8 +95,29 @@ class OwnerDashboard extends StatelessWidget {
           lowStock: inventory.lowStockCount,
           nearExpiry: inventory.nearExpiryCount,
           overdueCustomers: overdueCount,
+          uninvoiced: ordering.uninvoicedDeliveries.length,
+          onInvoice: () async {
+            final n = ordering.uninvoicedDeliveries.length;
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: Text('Bill $n delivered ${n == 1 ? 'order' : 'orders'}?'),
+                content: const Text('These were delivered before deliveries created invoices, so the customers were never charged. '
+                    'Each order total will be added to its customer\'s balance and appear on their statement.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                  FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Create invoices')),
+                ],
+              ),
+            );
+            if (ok == true) ordering.invoiceUninvoicedDeliveries(by: auth.currentUser!);
+          },
+          overLimitOrders: ordering.orders.where((o) => o.overCreditLimit && o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled).length,
+          payments: customers.payments,
+          unbalancedCustomers: customers.customers.where((c) => !customers.payments.statementFor(c).balanced).length,
           nav: nav,
           onOpenCustomers: openCustomers,
+          onOpenPayments: (tab) => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentsScreen(payments: customers.payments, auth: auth, initialTab: tab))),
         ),
 
         const SliverToBoxAdapter(child: SectionHeader('Money')),
@@ -173,9 +197,22 @@ class _NeedsAttention extends StatelessWidget {
     required this.lowStock,
     required this.nearExpiry,
     required this.overdueCustomers,
+    required this.uninvoiced,
+    required this.onInvoice,
+    required this.overLimitOrders,
+    required this.payments,
+    required this.unbalancedCustomers,
     required this.nav,
     required this.onOpenCustomers,
+    required this.onOpenPayments,
   });
+
+  final int uninvoiced;
+  final VoidCallback onInvoice;
+  final int overLimitOrders;
+  final PaymentsController payments;
+  final int unbalancedCustomers;
+  final void Function(int tab) onOpenPayments;
 
   final int pendingOrders;
   final int lowStock;
@@ -186,7 +223,59 @@ class _NeedsAttention extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final disputed = payments.disputed.length;
+    final toReceive = payments.pendingHandover;
+    final toReceiveTotal = toReceive.fold(0.0, (s, p) => s + p.amount);
+    final shortfall = payments.shortfalls.fold(0.0, (s, p) => s + p.shortfall);
     final tiles = <Widget>[
+      if (uninvoiced > 0)
+        AttentionTile(
+          icon: Icons.receipt_long_outlined,
+          color: Colors.red,
+          label: '$uninvoiced delivered ${uninvoiced == 1 ? 'order was' : 'orders were'} never billed',
+          actionLabel: 'Bill now',
+          onTap: onInvoice,
+        ),
+      if (disputed > 0)
+        AttentionTile(
+          icon: Icons.report_outlined,
+          color: Colors.red,
+          label: '$disputed ${disputed == 1 ? 'payment is' : 'payments are'} disputed by customers',
+          actionLabel: 'Review',
+          onTap: () => onOpenPayments(1),
+        ),
+      if (unbalancedCustomers > 0)
+        AttentionTile(
+          icon: Icons.rule,
+          color: Colors.red,
+          label: "$unbalancedCustomers ${unbalancedCustomers == 1 ? "customer's balance doesn't" : "customers' balances don't"} match their records",
+          actionLabel: 'Check',
+          onTap: onOpenCustomers,
+        ),
+      if (shortfall > 0)
+        AttentionTile(
+          icon: Icons.money_off,
+          color: Colors.red,
+          label: '${formatNpr(shortfall)} short in cash handovers',
+          actionLabel: 'Review',
+          onTap: () => onOpenPayments(1),
+        ),
+      if (toReceive.isNotEmpty)
+        AttentionTile(
+          icon: Icons.account_balance_wallet_outlined,
+          color: Colors.orange,
+          label: '${formatNpr(toReceiveTotal)} collected, not yet in the till',
+          actionLabel: 'Receive',
+          onTap: () => onOpenPayments(0),
+        ),
+      if (overLimitOrders > 0)
+        AttentionTile(
+          icon: Icons.credit_card_off_outlined,
+          color: Colors.deepOrange,
+          label: '$overLimitOrders ${overLimitOrders == 1 ? 'order goes' : 'orders go'} over the credit limit',
+          actionLabel: 'Decide',
+          onTap: nav.openOrders,
+        ),
       if (pendingOrders > 0)
         AttentionTile(
           icon: Icons.list_alt,

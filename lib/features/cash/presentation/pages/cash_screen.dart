@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
+import 'package:sarathigrocery/features/cash/domain/entities/cash_ledger_entry.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 
 const _expenseCategories = ['Rent', 'Transport', 'Utilities', 'Packaging', 'Tea/Misc'];
@@ -81,7 +82,12 @@ class _DailyLedgerTab extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('Cash in Hand: ${formatNpr(controller.cashInHand)}', style: Theme.of(context).textTheme.titleLarge),
+          child: Column(
+            children: [
+              Text('Cash in Hand: ${formatNpr(controller.cashInHand)}', style: Theme.of(context).textTheme.titleLarge),
+              Text('Bank: ${formatNpr(controller.bankBalance)} · Wallet: ${formatNpr(controller.walletBalance)}'),
+            ],
+          ),
         ),
         Expanded(
           child: ListView.separated(
@@ -90,11 +96,11 @@ class _DailyLedgerTab extends StatelessWidget {
             separatorBuilder: (_, _) => const Divider(),
             itemBuilder: (context, index) {
               final e = entries[index];
-              final isOutflow = e.type == CashEntryType.expense || e.type == CashEntryType.deposit || e.type == CashEntryType.supplierPayment;
+              final isOutflow = e.isOutflow;
               return ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(e.note),
-                subtitle: Text('${_ledgerLabel(e.type)} · ${formatDate(e.date)}'),
+                subtitle: Text('${ledgerAccountLabel(e.account)} · ${_ledgerLabel(e)} · ${formatDate(e.date)}'),
                 trailing: Text(
                   '${isOutflow ? '-' : '+'}${formatNpr(e.amount)}',
                   style: TextStyle(
@@ -110,8 +116,8 @@ class _DailyLedgerTab extends StatelessWidget {
     );
   }
 
-  String _ledgerLabel(CashEntryType type) {
-    switch (type) {
+  String _ledgerLabel(CashLedgerEntry e) {
+    switch (e.type) {
       case CashEntryType.opening:
         return 'Opening';
       case CashEntryType.sale:
@@ -121,9 +127,11 @@ class _DailyLedgerTab extends StatelessWidget {
       case CashEntryType.expense:
         return 'Money Out · Expense';
       case CashEntryType.deposit:
-        return 'Money Out · Bank Deposit';
+        return e.isOutflow ? 'Money Out · Bank Deposit' : 'Money In · Bank Deposit';
       case CashEntryType.supplierPayment:
         return 'Money Out · Supplier Payment';
+      case CashEntryType.refund:
+        return 'Money Out · Refund / Correction';
     }
   }
 }

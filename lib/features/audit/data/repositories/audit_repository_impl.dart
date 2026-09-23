@@ -4,6 +4,10 @@ import 'package:sarathigrocery/features/audit/domain/entities/audit_log_entry.da
 import 'package:sarathigrocery/features/audit/domain/repositories/audit_repository.dart';
 
 class AuditRepositoryImpl implements AuditRepository {
+  AuditRepositoryImpl(this._currentUserId);
+
+  final String? Function() _currentUserId;
+
   final _entries = SyncedCollection<AuditLogEntry>(
     'auditLog',
     idOf: (e) => e.id,
@@ -15,6 +19,7 @@ class AuditRepositoryImpl implements AuditRepository {
       'entityId': e.entityId,
       'oldValue': e.oldValue,
       'newValue': e.newValue,
+      'userId': e.userId,
     },
     fromJson: (j) => AuditLogEntry(
       id: j['id'],
@@ -25,6 +30,7 @@ class AuditRepositoryImpl implements AuditRepository {
       entityId: j['entityId'] ?? '',
       oldValue: j['oldValue'] ?? '',
       newValue: j['newValue'] ?? '',
+      userId: j['userId'],
     ),
   );
 
@@ -41,6 +47,7 @@ class AuditRepositoryImpl implements AuditRepository {
       entityId: entityId,
       oldValue: oldValue,
       newValue: newValue,
+      userId: _currentUserId(),
     ));
   }
 

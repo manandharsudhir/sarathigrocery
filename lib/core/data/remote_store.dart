@@ -29,6 +29,15 @@ class DeleteOp extends WriteOp {
   const DeleteOp(super.collection, super.id);
 }
 
+/// Thrown by [RemoteStore.commit] with `requireOnline` when the server
+/// can't be reached. Nothing was saved.
+class OfflineException implements Exception {
+  const OfflineException();
+
+  @override
+  String toString() => 'No connection to the server';
+}
+
 /// The only seam between the app and whatever backend stores its data.
 ///
 /// Repositories reach it exclusively through [SyncedCollection] using plain
@@ -47,8 +56,13 @@ abstract class RemoteStore {
   /// backend allows it (e.g. `meta/setup`).
   Future<Json?> get(String collection, String id);
 
-  /// Applies [ops] all-or-nothing.
-  Future<void> commit(List<WriteOp> ops);
+  /// Ids of every document in [collection], straight from the server.
+  Future<List<String>> listIds(String collection);
+
+  /// Applies [ops] all-or-nothing. With [requireOnline], the write must reach
+  /// the server now or fail — it is never queued for later (used where the
+  /// server's answer decides what happens next, e.g. delivery-code checks).
+  Future<void> commit(List<WriteOp> ops, {bool requireOnline = false});
 }
 
 bool _matches(Json doc, String? id, Map<String, Object?> where) =>
@@ -58,6 +72,11 @@ bool _matches(Json doc, String? id, Map<String, Object?> where) =>
 /// backend at all. Enforces no access rules.
 class InMemoryRemoteStore implements RemoteStore {
   final Map<String, Map<String, Json>> _data = {};
+
+  /// Test hooks: simulate no connection (online-only commits fail) or a
+  /// server rejection (return true to refuse a batch).
+  bool online = true;
+  bool Function(List<WriteOp> ops)? rejectIf;
   final Map<String, List<void Function()>> _watchers = {};
 
   List<Json> _snapshot(String collection) => [
@@ -77,13 +96,21 @@ class InMemoryRemoteStore implements RemoteStore {
   }
 
   @override
+  Future<List<String>> listIds(String collection) async => (_data[collection] ?? {}).keys.toList();
+
+  /// Every document, for tests.
+  int get documentCount => _data.values.fold(0, (sum, docs) => sum + docs.length);
+
+  @override
   Future<Json?> get(String collection, String id) async {
     final doc = _data[collection]?[id];
     return doc == null ? null : {...doc, 'id': id};
   }
 
   @override
-  Future<void> commit(List<WriteOp> ops) async {
+  Future<void> commit(List<WriteOp> ops, {bool requireOnline = false}) async {
+    if (requireOnline && !online) throw const OfflineException();
+    if (rejectIf?.call(ops) ?? false) throw StateError('permission-denied');
     for (final op in ops) {
       final docs = _data[op.collection] ??= {};
       switch (op) {

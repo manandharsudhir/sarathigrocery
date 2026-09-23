@@ -1,0 +1,3472 @@
+[
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "users",
+    "id": "uid1",
+    "data": {
+     "name": "Owner",
+     "phone": "9800000001",
+     "role": "owner",
+     "active": true,
+     "linkedCustomerId": null,
+     "customPermissions": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "meta",
+    "id": "setup",
+    "data": {
+     "ownerId": "uid1"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "settings",
+    "id": "business",
+    "data": {
+     "businessName": "Shop",
+     "businessAddress": "",
+     "businessPhone": "9800000001",
+     "defaultLowStockThreshold": 10,
+     "taxPercent": 0.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Rice",
+    "data": {
+     "name": "Rice"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Oil",
+    "data": {
+     "name": "Oil"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Sugar",
+    "data": {
+     "name": "Sugar"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Spices",
+    "data": {
+     "name": "Spices"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Beverages",
+    "data": {
+     "name": "Beverages"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Pulses",
+    "data": {
+     "name": "Pulses"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Noodles",
+    "data": {
+     "name": "Noodles"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Biscuits",
+    "data": {
+     "name": "Biscuits"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "products",
+    "id": "P0001",
+    "data": {
+     "sku": "RIC-25",
+     "brand": "Annapurna",
+     "retailPrice": null,
+     "customUnitLabel": "",
+     "description": "",
+     "expiryDate": null,
+     "isActive": true,
+     "reservedQty": 0,
+     "name": "Basmati Rice 25kg",
+     "category": "Rice",
+     "unitPrice": 3200,
+     "stockQty": 18,
+     "reorderLevel": 10,
+     "unit": "sack"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "products",
+    "id": "P0002",
+    "data": {
+     "sku": "OIL-15",
+     "brand": "",
+     "retailPrice": null,
+     "customUnitLabel": "",
+     "description": "",
+     "expiryDate": null,
+     "isActive": true,
+     "reservedQty": 0,
+     "name": "Mustard Oil 15L",
+     "category": "Oil",
+     "unitPrice": 4500,
+     "stockQty": 4,
+     "reorderLevel": 6,
+     "unit": "bottle"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "products",
+    "id": "P0003",
+    "data": {
+     "sku": "SUG-50",
+     "brand": "",
+     "retailPrice": null,
+     "customUnitLabel": "",
+     "description": "",
+     "expiryDate": null,
+     "isActive": true,
+     "reservedQty": 0,
+     "name": "Sugar 50kg",
+     "category": "Sugar",
+     "unitPrice": 5800,
+     "stockQty": 12,
+     "reorderLevel": 8,
+     "unit": "sack"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "products",
+    "id": "P0004",
+    "data": {
+     "sku": "SPI-TUR1",
+     "brand": "",
+     "retailPrice": null,
+     "customUnitLabel": "",
+     "description": "",
+     "expiryDate": 1791919403093,
+     "isActive": true,
+     "reservedQty": 0,
+     "name": "Turmeric Powder 1kg",
+     "category": "Spices",
+     "unitPrice": 320,
+     "stockQty": 40,
+     "reorderLevel": 15,
+     "unit": "packet"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "products",
+    "id": "P0005",
+    "data": {
+     "sku": "BEV-COKE2",
+     "brand": "",
+     "retailPrice": null,
+     "customUnitLabel": "",
+     "description": "",
+     "expiryDate": null,
+     "isActive": true,
+     "reservedQty": 0,
+     "name": "Coke 2L (Case of 9)",
+     "category": "Beverages",
+     "unitPrice": 1350,
+     "stockQty": 25,
+     "reorderLevel": 10,
+     "unit": "carton"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "products",
+    "id": "P0006",
+    "data": {
+     "sku": "BEV-TEA1",
+     "brand": "",
+     "retailPrice": null,
+     "customUnitLabel": "",
+     "description": "",
+     "expiryDate": 1791055403093,
+     "isActive": true,
+     "reservedQty": 0,
+     "name": "Chiya Patti 1kg",
+     "category": "Beverages",
+     "unitPrice": 280,
+     "stockQty": 5,
+     "reorderLevel": 10,
+     "unit": "packet"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "productCosts",
+    "id": "P0001",
+    "data": {
+     "purchasePrice": 2800
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "productCosts",
+    "id": "P0002",
+    "data": {
+     "purchasePrice": 3900
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "productCosts",
+    "id": "P0003",
+    "data": {
+     "purchasePrice": 5200
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "productCosts",
+    "id": "P0004",
+    "data": {
+     "purchasePrice": 250
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "productCosts",
+    "id": "P0005",
+    "data": {
+     "purchasePrice": 1100
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "productCosts",
+    "id": "P0006",
+    "data": {
+     "purchasePrice": 220
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "C0001",
+    "data": {
+     "name": "Shrestha Kirana Pasal",
+     "phone": "98410XXXXX",
+     "location": "Baneshwor",
+     "creditLimit": 50000,
+     "outstandingBalance": 32000,
+     "openingBalance": 32000,
+     "lastPaymentDate": 1789759403093,
+     "defaultDiscountPercent": 0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "C0002",
+    "data": {
+     "name": "Gurung General Store",
+     "phone": "98510XXXXX",
+     "location": "Koteshwor",
+     "creditLimit": 30000,
+     "outstandingBalance": 31500,
+     "openingBalance": 31500,
+     "lastPaymentDate": 1786735403093,
+     "defaultDiscountPercent": 0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "C0003",
+    "data": {
+     "name": "Thapa Trading",
+     "phone": "98010XXXXX",
+     "location": "Balkumari",
+     "creditLimit": 20000,
+     "outstandingBalance": 4000,
+     "openingBalance": 4000,
+     "lastPaymentDate": 1786303403093,
+     "defaultDiscountPercent": 0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "suppliers",
+    "id": "SU0001",
+    "data": {
+     "name": "Ramesh Traders",
+     "businessName": "Ramesh Wholesale Traders",
+     "phone": "98110XXXXX",
+     "address": "Kalanki",
+     "productsSupplied": "Rice, Sugar",
+     "amountPayable": 45000
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "suppliers",
+    "id": "SU0002",
+    "data": {
+     "name": "Himal Distributors",
+     "businessName": "Himal FMCG Distributors",
+     "phone": "98220XXXXX",
+     "address": "Balaju",
+     "productsSupplied": "Oil, Beverages",
+     "amountPayable": 0
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "users",
+    "id": "uid2",
+    "data": {
+     "name": "accountant",
+     "phone": "9800000002",
+     "role": "accountant",
+     "active": true,
+     "linkedCustomerId": null,
+     "customPermissions": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3100t91",
+    "data": {
+     "date": 1790191403101,
+     "userName": "Owner",
+     "action": "Employee added",
+     "entity": "User",
+     "entityId": "uid2",
+     "oldValue": "",
+     "newValue": "accountant",
+     "userId": "uid1"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "users",
+    "id": "uid3",
+    "data": {
+     "name": "employee",
+     "phone": "9800000003",
+     "role": "employee",
+     "active": true,
+     "linkedCustomerId": null,
+     "customPermissions": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3101e81",
+    "data": {
+     "date": 1790191403102,
+     "userName": "Owner",
+     "action": "Employee added",
+     "entity": "User",
+     "entityId": "uid3",
+     "oldValue": "",
+     "newValue": "employee",
+     "userId": "uid1"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "users",
+    "id": "uid4",
+    "data": {
+     "name": "delivery",
+     "phone": "9800000005",
+     "role": "delivery",
+     "active": true,
+     "linkedCustomerId": null,
+     "customPermissions": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn32028m4",
+    "data": {
+     "date": 1790191403102,
+     "userName": "Owner",
+     "action": "Employee added",
+     "entity": "User",
+     "entityId": "uid4",
+     "oldValue": "",
+     "newValue": "delivery",
+     "userId": "uid1"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "users",
+    "id": "uid5",
+    "data": {
+     "name": "Gurung General Store",
+     "phone": "9800000004",
+     "role": "customer",
+     "active": true,
+     "linkedCustomerId": "C0002",
+     "customPermissions": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3203mw1",
+    "data": {
+     "date": 1790191403102,
+     "userName": "Owner",
+     "action": "Customer login created",
+     "entity": "Customer",
+     "entityId": "C0002",
+     "oldValue": "",
+     "newValue": "9800000004",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "Cmuehqn3204uvm",
+    "data": {
+     "name": "New Shop",
+     "phone": "9811",
+     "location": "Patan",
+     "creditLimit": 20000.0,
+     "outstandingBalance": 5000.0,
+     "lastPaymentDate": null,
+     "defaultDiscountPercent": 0.0,
+     "openingBalance": 5000.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3305wd9",
+    "data": {
+     "date": 1790191403103,
+     "userName": "Owner",
+     "action": "Customer added",
+     "entity": "Customer",
+     "entityId": "Cmuehqn3204uvm",
+     "oldValue": "",
+     "newValue": "New Shop (opening balance 5000)",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3306pax",
+    "data": {
+     "date": 1790191403103,
+     "userName": "Owner",
+     "action": "Credit limit changed",
+     "entity": "Customer",
+     "entityId": "Cmuehqn3204uvm",
+     "oldValue": "20000",
+     "newValue": "25000",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3307pqq",
+    "data": {
+     "date": 1790191403103,
+     "userName": "Owner",
+     "action": "Customer discount changed",
+     "entity": "Customer",
+     "entityId": "Cmuehqn3204uvm",
+     "oldValue": "0.0%",
+     "newValue": "2.0%",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "Cmuehqn3204uvm",
+    "data": {
+     "name": "New Shop Pvt",
+     "phone": "9811",
+     "location": "Patan",
+     "creditLimit": 25000.0,
+     "lastPaymentDate": null,
+     "defaultDiscountPercent": 2.0,
+     "openingBalance": 5000.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "categories",
+    "id": "Dairy",
+    "data": {
+     "name": "Dairy"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "products",
+    "id": "Pmuehqn3408nan",
+    "data": {
+     "name": "Ghee",
+     "category": "Dairy",
+     "sku": "",
+     "brand": "",
+     "unitPrice": 5000.0,
+     "retailPrice": null,
+     "unit": "piece",
+     "customUnitLabel": "",
+     "description": "",
+     "isActive": true,
+     "stockQty": 20,
+     "reservedQty": 0,
+     "reorderLevel": 2,
+     "expiryDate": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "productCosts",
+    "id": "Pmuehqn3408nan",
+    "data": {
+     "purchasePrice": 4200.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn34093x6",
+    "data": {
+     "date": 1790191403104,
+     "userName": "Owner",
+     "action": "Price changed",
+     "entity": "Product",
+     "entityId": "Pmuehqn3408nan",
+     "oldValue": "5000",
+     "newValue": "5100",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "products",
+    "id": "Pmuehqn3408nan",
+    "data": {
+     "name": "Ghee",
+     "category": "Dairy",
+     "sku": "",
+     "brand": "",
+     "unitPrice": 5100.0,
+     "retailPrice": null,
+     "unit": "piece",
+     "customUnitLabel": "",
+     "description": "",
+     "isActive": true,
+     "reorderLevel": 2,
+     "expiryDate": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "settings",
+    "id": "business",
+    "data": {
+     "businessAddress": "Koteshwor",
+     "defaultLowStockThreshold": 5
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid5",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "customerId": "C0002",
+     "items": [
+      {
+       "productId": "Pmuehqn3408nan",
+       "qty": 1,
+       "price": 5100.0
+      }
+     ],
+     "discountPercent": 0.0,
+     "deliveryType": "delivery",
+     "address": "Koteshwor",
+     "notes": "",
+     "status": "placed",
+     "createdDate": 1790191403112,
+     "updatedDate": 1790191403112,
+     "placedByUserId": "uid5",
+     "assignedToId": null,
+     "assignedToName": "",
+     "overCreditLimit": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "deliveryCodes",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "customerId": "C0002",
+     "code": "802577"
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "Pmuehqn3408nan",
+    "deltas": {
+     "reservedQty": 1
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3c0bt6v",
+    "data": {
+     "date": 1790191403112,
+     "userName": "Gurung",
+     "action": "Order placed",
+     "entity": "Order",
+     "entityId": "Omuehqn3c0ahkn",
+     "oldValue": "",
+     "newValue": "5100",
+     "userId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3c0c3p4",
+    "data": {
+     "date": 1790191403112,
+     "title": "New order",
+     "body": "Order Omuehqn3c0ahkn placed by Gurung General Store — over credit limit, needs approval",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3d0dnwy",
+    "data": {
+     "date": 1790191403113,
+     "title": "New order",
+     "body": "Order Omuehqn3c0ahkn placed by Gurung General Store — over credit limit, needs approval",
+     "read": false,
+     "targetRole": "employee",
+     "targetUserId": null
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "updatedDate": 1790191403115,
+     "assignedToId": "uid4",
+     "assignedToName": "delivery"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3f0exwh",
+    "data": {
+     "date": 1790191403115,
+     "userName": "Owner",
+     "action": "Delivery assigned",
+     "entity": "Order",
+     "entityId": "Omuehqn3c0ahkn",
+     "oldValue": "",
+     "newValue": "delivery",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3f0f4yk",
+    "data": {
+     "date": 1790191403115,
+     "title": "Delivery assigned",
+     "body": "Order Omuehqn3c0ahkn for Gurung General Store · Koteshwor",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid4"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "status": "confirmed",
+     "updatedDate": 1790191403115,
+     "assignedToId": "uid4",
+     "assignedToName": "delivery"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3f0gbhq",
+    "data": {
+     "date": 1790191403115,
+     "userName": "Owner",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn3c0ahkn",
+     "oldValue": "placed",
+     "newValue": "confirmed",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0h6rh",
+    "data": {
+     "date": 1790191403116,
+     "title": "Order Omuehqn3c0ahkn: Confirmed",
+     "body": "Your order is now confirmed.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "status": "preparing",
+     "updatedDate": 1790191403116,
+     "assignedToId": "uid4",
+     "assignedToName": "delivery"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3g0i9bm",
+    "data": {
+     "date": 1790191403116,
+     "userName": "Owner",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn3c0ahkn",
+     "oldValue": "confirmed",
+     "newValue": "preparing",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0jk2r",
+    "data": {
+     "date": 1790191403116,
+     "title": "Order Omuehqn3c0ahkn: Preparing",
+     "body": "Your order is now preparing.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "status": "ready",
+     "updatedDate": 1790191403116,
+     "assignedToId": "uid4",
+     "assignedToName": "delivery"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3g0khzt",
+    "data": {
+     "date": 1790191403116,
+     "userName": "Owner",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn3c0ahkn",
+     "oldValue": "preparing",
+     "newValue": "ready",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0lyhn",
+    "data": {
+     "date": 1790191403116,
+     "title": "Order Omuehqn3c0ahkn: Ready",
+     "body": "Your order is now ready.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid4",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "status": "outForDelivery",
+     "updatedDate": 1790191403117
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3h0mrmh",
+    "data": {
+     "date": 1790191403117,
+     "userName": "delivery",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn3c0ahkn",
+     "oldValue": "ready",
+     "newValue": "outForDelivery",
+     "userId": "uid4"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3h0nay0",
+    "data": {
+     "date": 1790191403117,
+     "title": "Order Omuehqn3c0ahkn: Out for Delivery",
+     "body": "Your order is now out for delivery.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid4",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "codeChecks",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "lastCode": "802577",
+     "attempts": 1,
+     "verified": false
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid4",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "codeChecks",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "verified": true
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid4",
+  "ops": [
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "Pmuehqn3408nan",
+    "deltas": {
+     "reservedQty": -1
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "Pmuehqn3408nan",
+    "deltas": {
+     "stockQty": -1
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "sales",
+    "id": "Smuehqn3j0onfg",
+    "data": {
+     "date": 1790191403119,
+     "items": [
+      {
+       "productId": "Pmuehqn3408nan",
+       "qty": 1,
+       "unitPrice": 5100.0
+      }
+     ],
+     "discountPercent": 0.0,
+     "isCredit": true,
+     "customerId": "C0002",
+     "flaggedForApproval": true,
+     "status": "completed",
+     "createdByUserId": "uid4",
+     "createdByName": "delivery",
+     "orderId": "Omuehqn3c0ahkn"
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": 5100.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3k0pyus",
+    "data": {
+     "date": 1790191403120,
+     "userName": "delivery",
+     "action": "Order invoiced",
+     "entity": "Sale",
+     "entityId": "Smuehqn3j0onfg",
+     "oldValue": "",
+     "newValue": "5100 for order Omuehqn3c0ahkn",
+     "userId": "uid4"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn3c0ahkn",
+    "data": {
+     "status": "delivered",
+     "updatedDate": 1790191403120
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3k0q9kk",
+    "data": {
+     "date": 1790191403120,
+     "userName": "delivery",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn3c0ahkn",
+     "oldValue": "outForDelivery",
+     "newValue": "delivered",
+     "userId": "uid4"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3k0r1mo",
+    "data": {
+     "date": 1790191403120,
+     "title": "Order Omuehqn3c0ahkn: Delivered",
+     "body": "Your order is now delivered.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": -7000.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "C0002",
+    "data": {
+     "lastPaymentDate": 1790191403120
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3k0sr33",
+    "data": {
+     "date": 1790191403120,
+     "customerId": "C0002",
+     "amount": 7000.0,
+     "method": "cash",
+     "reference": "",
+     "orderId": "Omuehqn3c0ahkn",
+     "appliedToOrder": 5100.0,
+     "balanceAfter": 29600.0,
+     "collectedById": "uid4",
+     "collectedByName": "delivery",
+     "deliveryCode": "802577",
+     "customerConfirmedAt": null,
+     "disputedAt": null,
+     "disputeNote": "",
+     "settledAt": null,
+     "settledAmount": null,
+     "settledById": null,
+     "settledByName": "",
+     "reversedAt": null,
+     "reversedByName": "",
+     "reversalReason": ""
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3l0to8k",
+    "data": {
+     "date": 1790191403121,
+     "userName": "delivery",
+     "action": "Payment recorded",
+     "entity": "Customer",
+     "entityId": "C0002",
+     "oldValue": "",
+     "newValue": "NPR 7,000 cash for order Omuehqn3c0ahkn (code verified)",
+     "userId": "uid4"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3l0u7oj",
+    "data": {
+     "date": 1790191403121,
+     "title": "Receipt: NPR 7,000 received",
+     "body": "NPR 5,100 for order Omuehqn3c0ahkn, NPR 1,900 toward earlier balance. Balance now NPR 29,600.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3l0vrrb",
+    "data": {
+     "date": 1790191403121,
+     "title": "Payment collected",
+     "body": "NPR 7,000 from Gurung General Store by delivery",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid2",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3k0sr33",
+    "data": {
+     "settledAt": 1790191403125,
+     "settledAmount": 6500.0,
+     "settledById": "uid2",
+     "settledByName": "accountant"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3p0w0ht",
+    "data": {
+     "date": 1790191403125,
+     "type": "collection",
+     "amount": 6500.0,
+     "note": "Collection from Gurung General Store via delivery",
+     "reference": "PMmuehqn3k0sr33",
+     "account": "cash"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3p0xspp",
+    "data": {
+     "date": 1790191403125,
+     "userName": "accountant",
+     "action": "Cash received into till",
+     "entity": "Payment",
+     "entityId": "PMmuehqn3k0sr33",
+     "oldValue": "NPR 7,000",
+     "newValue": "NPR 6,500",
+     "userId": "uid2"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3p0ylnk",
+    "data": {
+     "date": 1790191403125,
+     "userName": "accountant",
+     "action": "Cash shortfall",
+     "entity": "Payment",
+     "entityId": "PMmuehqn3k0sr33",
+     "oldValue": "",
+     "newValue": "NPR 500 short from delivery",
+     "userId": "uid2"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3p0zndv",
+    "data": {
+     "date": 1790191403125,
+     "title": "Cash shortfall",
+     "body": "delivery handed over NPR 6,500 of NPR 7,000 collected from Gurung General Store.",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid3",
+  "ops": [
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": -500.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "C0002",
+    "data": {
+     "lastPaymentDate": 1790191403127
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3r107gk",
+    "data": {
+     "date": 1790191403127,
+     "customerId": "C0002",
+     "amount": 500.0,
+     "method": "cash",
+     "reference": "",
+     "orderId": null,
+     "appliedToOrder": 0.0,
+     "balanceAfter": 29100.0,
+     "collectedById": "uid3",
+     "collectedByName": "employee",
+     "deliveryCode": null,
+     "customerConfirmedAt": null,
+     "disputedAt": null,
+     "disputeNote": "",
+     "settledAt": null,
+     "settledAmount": null,
+     "settledById": null,
+     "settledByName": "",
+     "reversedAt": null,
+     "reversedByName": "",
+     "reversalReason": ""
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3r11iwy",
+    "data": {
+     "date": 1790191403127,
+     "userName": "employee",
+     "action": "Payment recorded",
+     "entity": "Customer",
+     "entityId": "C0002",
+     "oldValue": "",
+     "newValue": "NPR 500 cash",
+     "userId": "uid3"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3r1208q",
+    "data": {
+     "date": 1790191403127,
+     "title": "Receipt: NPR 500 received",
+     "body": "NPR 500 toward earlier balance. Balance now NPR 29,100. Please confirm or report a problem in My Account.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3r13t80",
+    "data": {
+     "date": 1790191403127,
+     "title": "Payment collected",
+     "body": "NPR 500 from Gurung General Store by employee",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": -300.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "C0002",
+    "data": {
+     "lastPaymentDate": 1790191403127
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3r14vb6",
+    "data": {
+     "date": 1790191403127,
+     "customerId": "C0002",
+     "amount": 300.0,
+     "method": "cash",
+     "reference": "",
+     "orderId": null,
+     "appliedToOrder": 0.0,
+     "balanceAfter": 28800.0,
+     "collectedById": "uid3",
+     "collectedByName": "employee",
+     "deliveryCode": null,
+     "customerConfirmedAt": null,
+     "disputedAt": null,
+     "disputeNote": "",
+     "settledAt": null,
+     "settledAmount": null,
+     "settledById": null,
+     "settledByName": "",
+     "reversedAt": null,
+     "reversedByName": "",
+     "reversalReason": ""
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3r15afd",
+    "data": {
+     "date": 1790191403127,
+     "userName": "employee",
+     "action": "Payment recorded",
+     "entity": "Customer",
+     "entityId": "C0002",
+     "oldValue": "",
+     "newValue": "NPR 300 cash",
+     "userId": "uid3"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3r16h7p",
+    "data": {
+     "date": 1790191403127,
+     "title": "Receipt: NPR 300 received",
+     "body": "NPR 300 toward earlier balance. Balance now NPR 28,800. Please confirm or report a problem in My Account.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3r17pv1",
+    "data": {
+     "date": 1790191403127,
+     "title": "Payment collected",
+     "body": "NPR 300 from Gurung General Store by employee",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid5",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3r14vb6",
+    "data": {
+     "customerConfirmedAt": 1790191403128
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3s18awn",
+    "data": {
+     "date": 1790191403128,
+     "userName": "Gurung General Store",
+     "action": "Payment confirmed by customer",
+     "entity": "Payment",
+     "entityId": "PMmuehqn3r14vb6",
+     "oldValue": "",
+     "newValue": "NPR 300",
+     "userId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3r107gk",
+    "data": {
+     "disputedAt": 1790191403129,
+     "disputeNote": "I paid 50"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3t19muf",
+    "data": {
+     "date": 1790191403129,
+     "userName": "Gurung General Store",
+     "action": "Payment disputed by customer",
+     "entity": "Payment",
+     "entityId": "PMmuehqn3r107gk",
+     "oldValue": "",
+     "newValue": "I paid 50",
+     "userId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3t1anh3",
+    "data": {
+     "date": 1790191403129,
+     "title": "Payment disputed",
+     "body": "Gurung General Store: \"I paid 50\" (NPR 500 recorded by employee)",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3r107gk",
+    "data": {
+     "reversedAt": 1790191403130,
+     "reversedByName": "Owner",
+     "reversalReason": "Entered wrong amount"
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": 500.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3u1b15d",
+    "data": {
+     "date": 1790191403130,
+     "userName": "Owner",
+     "action": "Payment reversed",
+     "entity": "Payment",
+     "entityId": "PMmuehqn3r107gk",
+     "oldValue": "NPR 500",
+     "newValue": "Entered wrong amount",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3u1c9tg",
+    "data": {
+     "date": 1790191403130,
+     "title": "Payment reversed",
+     "body": "NPR 500 from 24 Sep 2026 was reversed: Entered wrong amount",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid3",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "sales",
+    "id": "Smuehqn3v1dvs7",
+    "data": {
+     "date": 1790191403131,
+     "items": [
+      {
+       "productId": "P0001",
+       "qty": 1,
+       "unitPrice": 3200.0
+      }
+     ],
+     "discountPercent": 0.0,
+     "isCredit": false,
+     "customerId": null,
+     "flaggedForApproval": false,
+     "status": "completed",
+     "createdByUserId": "uid3",
+     "createdByName": "employee",
+     "orderId": null
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "P0001",
+    "deltas": {
+     "stockQty": -1
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3v1eb93",
+    "data": {
+     "date": 1790191403131,
+     "type": "sale",
+     "amount": 3200.0,
+     "note": "Sale Smuehqn3v1dvs7",
+     "reference": "Smuehqn3v1dvs7",
+     "account": "cash"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3v1f4yk",
+    "data": {
+     "date": 1790191403131,
+     "userName": "employee",
+     "action": "Sale recorded",
+     "entity": "Sale",
+     "entityId": "Smuehqn3v1dvs7",
+     "oldValue": "",
+     "newValue": "3200",
+     "userId": "uid3"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "sales",
+    "id": "Smuehqn3v1gfy1",
+    "data": {
+     "date": 1790191403131,
+     "items": [
+      {
+       "productId": "P0001",
+       "qty": 2,
+       "unitPrice": 3200.0
+      }
+     ],
+     "discountPercent": 0.0,
+     "isCredit": true,
+     "customerId": "C0002",
+     "flaggedForApproval": true,
+     "status": "completed",
+     "createdByUserId": "uid3",
+     "createdByName": "employee",
+     "orderId": null
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "P0001",
+    "deltas": {
+     "stockQty": -2
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": 6400.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3v1hcwb",
+    "data": {
+     "date": 1790191403131,
+     "userName": "employee",
+     "action": "Sale recorded",
+     "entity": "Sale",
+     "entityId": "Smuehqn3v1gfy1",
+     "oldValue": "",
+     "newValue": "6400",
+     "userId": "uid3"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "P0001",
+    "deltas": {
+     "stockQty": 2
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": -6400.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "sales",
+    "id": "Smuehqn3v1gfy1",
+    "data": {
+     "status": "cancelled"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3x1i3lo",
+    "data": {
+     "date": 1790191403133,
+     "userName": "Owner",
+     "action": "Sale cancelled",
+     "entity": "Sale",
+     "entityId": "Smuehqn3v1gfy1",
+     "oldValue": "completed",
+     "newValue": "cancelled - customer changed mind",
+     "userId": "uid1"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid2",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "purchases",
+    "id": "PUmuehqn3x1jct9",
+    "data": {
+     "date": 1790191403133,
+     "supplierId": "SU0001",
+     "items": [
+      {
+       "productId": "P0001",
+       "qty": 5,
+       "unitCost": 2700.0
+      }
+     ],
+     "paidAmount": 5000.0
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "P0001",
+    "deltas": {
+     "stockQty": 5
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "productCosts",
+    "id": "P0001",
+    "data": {
+     "purchasePrice": 2700.0
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "suppliers",
+    "id": "SU0001",
+    "deltas": {
+     "amountPayable": 8500.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1k2m5",
+    "data": {
+     "date": 1790191403134,
+     "type": "supplierPayment",
+     "amount": 5000.0,
+     "note": "Purchase PUmuehqn3x1jct9 payment - Ramesh Traders",
+     "reference": "PUmuehqn3x1jct9",
+     "account": "cash"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3y1lzu3",
+    "data": {
+     "date": 1790191403134,
+     "userName": "accountant",
+     "action": "Purchase received",
+     "entity": "Purchase",
+     "entityId": "PUmuehqn3x1jct9",
+     "oldValue": "",
+     "newValue": "13500",
+     "userId": "uid2"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3y1m14f",
+    "data": {
+     "date": 1790191403134,
+     "title": "Stock received",
+     "body": "Purchase PUmuehqn3x1jct9 received from Ramesh Traders",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "suppliers",
+    "id": "SU0001",
+    "deltas": {
+     "amountPayable": -1000.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1nfxx",
+    "data": {
+     "date": 1790191403134,
+     "type": "supplierPayment",
+     "amount": 1000.0,
+     "note": "part",
+     "reference": "SU0001",
+     "account": "cash"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3y1o42c",
+    "data": {
+     "date": 1790191403134,
+     "userName": "accountant",
+     "action": "Supplier payment recorded",
+     "entity": "Supplier",
+     "entityId": "SU0001",
+     "oldValue": "",
+     "newValue": "1000",
+     "userId": "uid2"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "expenses",
+    "id": "Emuehqn3y1pbcy",
+    "data": {
+     "date": 1790191403134,
+     "category": "Rent",
+     "amount": 3000.0,
+     "note": "Sept",
+     "createdByName": "accountant"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1qih3",
+    "data": {
+     "date": 1790191403134,
+     "type": "expense",
+     "amount": 3000.0,
+     "note": "Rent - Sept",
+     "reference": "",
+     "account": "cash"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1rr5r",
+    "data": {
+     "date": 1790191403134,
+     "type": "deposit",
+     "amount": 2000.0,
+     "note": "Bank deposit",
+     "reference": "",
+     "account": "cash"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1su1o",
+    "data": {
+     "date": 1790191403134,
+     "type": "deposit",
+     "amount": 2000.0,
+     "note": "Bank deposit",
+     "reference": "",
+     "account": "bank"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "partnerLedger",
+    "id": "PLmuehqn3y1th4z",
+    "data": {
+     "date": 1790191403134,
+     "partnerName": "Partner A",
+     "amount": 10000.0,
+     "type": "loan",
+     "note": "top-up"
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "Cmuehqn3204uvm",
+    "deltas": {
+     "outstandingBalance": -1200.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "Cmuehqn3204uvm",
+    "data": {
+     "lastPaymentDate": 1790191403135
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3z1uv32",
+    "data": {
+     "date": 1790191403135,
+     "customerId": "Cmuehqn3204uvm",
+     "amount": 1200.0,
+     "method": "wallet",
+     "reference": "ESEWA-1",
+     "orderId": null,
+     "appliedToOrder": 0.0,
+     "balanceAfter": 3800.0,
+     "collectedById": "uid2",
+     "collectedByName": "accountant",
+     "deliveryCode": null,
+     "customerConfirmedAt": null,
+     "disputedAt": null,
+     "disputeNote": "",
+     "settledAt": null,
+     "settledAmount": null,
+     "settledById": null,
+     "settledByName": "",
+     "reversedAt": null,
+     "reversedByName": "",
+     "reversalReason": ""
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3z1vzxw",
+    "data": {
+     "date": 1790191403135,
+     "userName": "accountant",
+     "action": "Payment recorded",
+     "entity": "Customer",
+     "entityId": "Cmuehqn3204uvm",
+     "oldValue": "",
+     "newValue": "NPR 1,200 wallet",
+     "userId": "uid2"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3z1w7cc",
+    "data": {
+     "date": 1790191403135,
+     "title": "Payment collected",
+     "body": "NPR 1,200 from New Shop Pvt by accountant",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3z1uv32",
+    "data": {
+     "date": 1790191403135,
+     "customerId": "Cmuehqn3204uvm",
+     "amount": 1200.0,
+     "method": "wallet",
+     "reference": "ESEWA-1",
+     "orderId": null,
+     "appliedToOrder": 0.0,
+     "balanceAfter": 3800.0,
+     "collectedById": "uid2",
+     "collectedByName": "accountant",
+     "deliveryCode": null,
+     "customerConfirmedAt": null,
+     "disputedAt": null,
+     "disputeNote": "",
+     "settledAt": 1790191403135,
+     "settledAmount": 1200.0,
+     "settledById": "uid2",
+     "settledByName": "accountant",
+     "reversedAt": null,
+     "reversedByName": "",
+     "reversalReason": ""
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3z1x9f3",
+    "data": {
+     "date": 1790191403135,
+     "type": "collection",
+     "amount": 1200.0,
+     "note": "Collection from New Shop Pvt via accountant · ESEWA-1",
+     "reference": "PMmuehqn3z1uv32",
+     "account": "wallet"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn3z1yo47",
+    "data": {
+     "date": 1790191403135,
+     "userName": "accountant",
+     "action": "Payment verified",
+     "entity": "Payment",
+     "entityId": "PMmuehqn3z1uv32",
+     "oldValue": "NPR 1,200",
+     "newValue": "NPR 1,200",
+     "userId": "uid2"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid5",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "customerId": "C0002",
+     "items": [
+      {
+       "productId": "Pmuehqn3408nan",
+       "qty": 1,
+       "price": 5100.0
+      }
+     ],
+     "discountPercent": 0.0,
+     "deliveryType": "pickup",
+     "address": "",
+     "notes": "",
+     "status": "placed",
+     "createdDate": 1790191403137,
+     "updatedDate": 1790191403137,
+     "placedByUserId": "uid5",
+     "assignedToId": null,
+     "assignedToName": "",
+     "overCreditLimit": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "deliveryCodes",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "customerId": "C0002",
+     "code": "732303"
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "Pmuehqn3408nan",
+    "deltas": {
+     "reservedQty": 1
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn42203qx",
+    "data": {
+     "date": 1790191403138,
+     "userName": "Gurung",
+     "action": "Order placed",
+     "entity": "Order",
+     "entityId": "Omuehqn411z04m",
+     "oldValue": "",
+     "newValue": "5100",
+     "userId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4221pb8",
+    "data": {
+     "date": 1790191403138,
+     "title": "New order",
+     "body": "Order Omuehqn411z04m placed by Gurung General Store — over credit limit, needs approval",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4222oul",
+    "data": {
+     "date": 1790191403138,
+     "title": "New order",
+     "body": "Order Omuehqn411z04m placed by Gurung General Store — over credit limit, needs approval",
+     "read": false,
+     "targetRole": "employee",
+     "targetUserId": null
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "status": "confirmed",
+     "updatedDate": 1790191403139
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn43239l8",
+    "data": {
+     "date": 1790191403139,
+     "userName": "Owner",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn411z04m",
+     "oldValue": "placed",
+     "newValue": "confirmed",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4324st7",
+    "data": {
+     "date": 1790191403139,
+     "title": "Order Omuehqn411z04m: Confirmed",
+     "body": "Your order is now confirmed.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "status": "preparing",
+     "updatedDate": 1790191403139
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn4325bc9",
+    "data": {
+     "date": 1790191403139,
+     "userName": "Owner",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn411z04m",
+     "oldValue": "confirmed",
+     "newValue": "preparing",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4326ij3",
+    "data": {
+     "date": 1790191403139,
+     "title": "Order Omuehqn411z04m: Preparing",
+     "body": "Your order is now preparing.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "status": "ready",
+     "updatedDate": 1790191403139
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn43272ut",
+    "data": {
+     "date": 1790191403139,
+     "userName": "Owner",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn411z04m",
+     "oldValue": "preparing",
+     "newValue": "ready",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4328bdp",
+    "data": {
+     "date": 1790191403139,
+     "title": "Order Omuehqn411z04m: Ready",
+     "body": "Your order is now ready.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "status": "outForDelivery",
+     "updatedDate": 1790191403139
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn43290t3",
+    "data": {
+     "date": 1790191403139,
+     "userName": "Owner",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn411z04m",
+     "oldValue": "ready",
+     "newValue": "outForDelivery",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn432akqf",
+    "data": {
+     "date": 1790191403139,
+     "title": "Order Omuehqn411z04m: Out for Delivery",
+     "body": "Your order is now out for delivery.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "updatedDate": 1790191403140,
+     "assignedToId": "uid1",
+     "assignedToName": "Owner"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn442boj3",
+    "data": {
+     "date": 1790191403140,
+     "userName": "Owner",
+     "action": "Delivery assigned",
+     "entity": "Order",
+     "entityId": "Omuehqn411z04m",
+     "oldValue": "",
+     "newValue": "Owner",
+     "userId": "uid1"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "codeChecks",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "lastCode": "732303",
+     "attempts": 1,
+     "verified": false
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "codeChecks",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "verified": true
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "Pmuehqn3408nan",
+    "deltas": {
+     "reservedQty": -1
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "products",
+    "id": "Pmuehqn3408nan",
+    "deltas": {
+     "stockQty": -1
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "sales",
+    "id": "Smuehqn452c716",
+    "data": {
+     "date": 1790191403141,
+     "items": [
+      {
+       "productId": "Pmuehqn3408nan",
+       "qty": 1,
+       "unitPrice": 5100.0
+      }
+     ],
+     "discountPercent": 0.0,
+     "isCredit": true,
+     "customerId": "C0002",
+     "flaggedForApproval": true,
+     "status": "completed",
+     "createdByUserId": "uid1",
+     "createdByName": "Owner",
+     "orderId": "Omuehqn411z04m"
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": 5100.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn452dl5d",
+    "data": {
+     "date": 1790191403141,
+     "userName": "Owner",
+     "action": "Order invoiced",
+     "entity": "Sale",
+     "entityId": "Smuehqn452c716",
+     "oldValue": "",
+     "newValue": "5100 for order Omuehqn411z04m",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "orders",
+    "id": "Omuehqn411z04m",
+    "data": {
+     "status": "delivered",
+     "updatedDate": 1790191403141
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn452etld",
+    "data": {
+     "date": 1790191403141,
+     "userName": "Owner",
+     "action": "Order status changed",
+     "entity": "Order",
+     "entityId": "Omuehqn411z04m",
+     "oldValue": "outForDelivery",
+     "newValue": "delivered",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn452ft7t",
+    "data": {
+     "date": 1790191403141,
+     "title": "Order Omuehqn411z04m: Delivered",
+     "body": "Your order is now delivered.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "increment",
+    "collection": "customers",
+    "id": "C0002",
+    "deltas": {
+     "outstandingBalance": -1000.0
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customers",
+    "id": "C0002",
+    "data": {
+     "lastPaymentDate": 1790191403141
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn452gdim",
+    "data": {
+     "date": 1790191403141,
+     "customerId": "C0002",
+     "amount": 1000.0,
+     "method": "wallet",
+     "reference": "KHALTI-9",
+     "orderId": "Omuehqn411z04m",
+     "appliedToOrder": 1000.0,
+     "balanceAfter": 33400.0,
+     "collectedById": "uid1",
+     "collectedByName": "Owner",
+     "deliveryCode": "732303",
+     "customerConfirmedAt": null,
+     "disputedAt": null,
+     "disputeNote": "",
+     "settledAt": null,
+     "settledAmount": null,
+     "settledById": null,
+     "settledByName": "",
+     "reversedAt": null,
+     "reversedByName": "",
+     "reversalReason": ""
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn452ht7j",
+    "data": {
+     "date": 1790191403141,
+     "userName": "Owner",
+     "action": "Payment recorded",
+     "entity": "Customer",
+     "entityId": "C0002",
+     "oldValue": "",
+     "newValue": "NPR 1,000 wallet for order Omuehqn411z04m (code verified)",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn452ishv",
+    "data": {
+     "date": 1790191403141,
+     "title": "Receipt: NPR 1,000 received",
+     "body": "NPR 1,000 for order Omuehqn411z04m, NPR 0 toward earlier balance. Balance now NPR 33,400.",
+     "read": false,
+     "targetRole": null,
+     "targetUserId": "uid5"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn452j30n",
+    "data": {
+     "date": 1790191403141,
+     "title": "Payment collected",
+     "body": "NPR 1,000 from Gurung General Store by Owner",
+     "read": false,
+     "targetRole": "owner",
+     "targetUserId": null
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "customerPayments",
+    "id": "PMmuehqn452gdim",
+    "data": {
+     "date": 1790191403141,
+     "customerId": "C0002",
+     "amount": 1000.0,
+     "method": "wallet",
+     "reference": "KHALTI-9",
+     "orderId": "Omuehqn411z04m",
+     "appliedToOrder": 1000.0,
+     "balanceAfter": 33400.0,
+     "collectedById": "uid1",
+     "collectedByName": "Owner",
+     "deliveryCode": "732303",
+     "customerConfirmedAt": null,
+     "disputedAt": null,
+     "disputeNote": "",
+     "settledAt": 1790191403141,
+     "settledAmount": 1000.0,
+     "settledById": "uid1",
+     "settledByName": "Owner",
+     "reversedAt": null,
+     "reversedByName": "",
+     "reversalReason": ""
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "cashLedger",
+    "id": "Lmuehqn452k0x5",
+    "data": {
+     "date": 1790191403141,
+     "type": "collection",
+     "amount": 1000.0,
+     "note": "Collection from Gurung General Store via Owner · KHALTI-9",
+     "reference": "PMmuehqn452gdim",
+     "account": "wallet"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn452lxvs",
+    "data": {
+     "date": 1790191403141,
+     "userName": "Owner",
+     "action": "Payment verified",
+     "entity": "Payment",
+     "entityId": "PMmuehqn452gdim",
+     "oldValue": "NPR 1,000",
+     "newValue": "NPR 1,000",
+     "userId": "uid1"
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "users",
+    "id": "uid3",
+    "data": {
+     "customPermissions": [
+      "viewSales",
+      "createSales",
+      "deliverOrders"
+     ]
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn472mp9s",
+    "data": {
+     "date": 1790191403143,
+     "userName": "Owner",
+     "action": "Employee permission changed",
+     "entity": "User",
+     "entityId": "uid3",
+     "oldValue": "",
+     "newValue": "viewSales, createSales, deliverOrders",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "users",
+    "id": "uid2",
+    "data": {
+     "active": false
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "auditLog",
+    "id": "AUmuehqn472nk2y",
+    "data": {
+     "date": 1790191403143,
+     "userName": "Owner",
+     "action": "Employee deactivated",
+     "entity": "User",
+     "entityId": "uid2",
+     "oldValue": "",
+     "newValue": "",
+     "userId": "uid1"
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn452j30n",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4221pb8",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3z1w7cc",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3y1m14f",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3t1anh3",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3r17pv1",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3r13t80",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3p0zndv",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3l0vrrb",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3c0c3p4",
+    "data": {
+     "read": true
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid5",
+  "ops": [
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn452ishv",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn452ft7t",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn432akqf",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4328bdp",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4326ij3",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn4324st7",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3u1c9tg",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3r16h7p",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3r1208q",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3l0u7oj",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3k0r1mo",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3h0nay0",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0lyhn",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0jk2r",
+    "data": {
+     "read": true
+    }
+   },
+   {
+    "kind": "put",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0h6rh",
+    "data": {
+     "read": true
+    }
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "delete",
+    "collection": "users",
+    "id": "uid2"
+   },
+   {
+    "kind": "delete",
+    "collection": "users",
+    "id": "uid3"
+   },
+   {
+    "kind": "delete",
+    "collection": "users",
+    "id": "uid4"
+   },
+   {
+    "kind": "delete",
+    "collection": "users",
+    "id": "uid5"
+   },
+   {
+    "kind": "delete",
+    "collection": "products",
+    "id": "P0001"
+   },
+   {
+    "kind": "delete",
+    "collection": "products",
+    "id": "P0002"
+   },
+   {
+    "kind": "delete",
+    "collection": "products",
+    "id": "P0003"
+   },
+   {
+    "kind": "delete",
+    "collection": "products",
+    "id": "P0004"
+   },
+   {
+    "kind": "delete",
+    "collection": "products",
+    "id": "P0005"
+   },
+   {
+    "kind": "delete",
+    "collection": "products",
+    "id": "P0006"
+   },
+   {
+    "kind": "delete",
+    "collection": "products",
+    "id": "Pmuehqn3408nan"
+   },
+   {
+    "kind": "delete",
+    "collection": "productCosts",
+    "id": "P0001"
+   },
+   {
+    "kind": "delete",
+    "collection": "productCosts",
+    "id": "P0002"
+   },
+   {
+    "kind": "delete",
+    "collection": "productCosts",
+    "id": "P0003"
+   },
+   {
+    "kind": "delete",
+    "collection": "productCosts",
+    "id": "P0004"
+   },
+   {
+    "kind": "delete",
+    "collection": "productCosts",
+    "id": "P0005"
+   },
+   {
+    "kind": "delete",
+    "collection": "productCosts",
+    "id": "P0006"
+   },
+   {
+    "kind": "delete",
+    "collection": "productCosts",
+    "id": "Pmuehqn3408nan"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Rice"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Oil"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Sugar"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Spices"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Beverages"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Pulses"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Noodles"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Biscuits"
+   },
+   {
+    "kind": "delete",
+    "collection": "categories",
+    "id": "Dairy"
+   },
+   {
+    "kind": "delete",
+    "collection": "customers",
+    "id": "C0001"
+   },
+   {
+    "kind": "delete",
+    "collection": "customers",
+    "id": "C0002"
+   },
+   {
+    "kind": "delete",
+    "collection": "customers",
+    "id": "C0003"
+   },
+   {
+    "kind": "delete",
+    "collection": "customers",
+    "id": "Cmuehqn3204uvm"
+   },
+   {
+    "kind": "delete",
+    "collection": "suppliers",
+    "id": "SU0001"
+   },
+   {
+    "kind": "delete",
+    "collection": "suppliers",
+    "id": "SU0002"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3p0w0ht"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3v1eb93"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1k2m5"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1nfxx"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1qih3"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1rr5r"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3y1su1o"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn3z1x9f3"
+   },
+   {
+    "kind": "delete",
+    "collection": "cashLedger",
+    "id": "Lmuehqn452k0x5"
+   },
+   {
+    "kind": "delete",
+    "collection": "expenses",
+    "id": "Emuehqn3y1pbcy"
+   },
+   {
+    "kind": "delete",
+    "collection": "partnerLedger",
+    "id": "PLmuehqn3y1th4z"
+   },
+   {
+    "kind": "delete",
+    "collection": "sales",
+    "id": "Smuehqn3j0onfg"
+   },
+   {
+    "kind": "delete",
+    "collection": "sales",
+    "id": "Smuehqn3v1dvs7"
+   },
+   {
+    "kind": "delete",
+    "collection": "sales",
+    "id": "Smuehqn3v1gfy1"
+   },
+   {
+    "kind": "delete",
+    "collection": "sales",
+    "id": "Smuehqn452c716"
+   },
+   {
+    "kind": "delete",
+    "collection": "purchases",
+    "id": "PUmuehqn3x1jct9"
+   },
+   {
+    "kind": "delete",
+    "collection": "orders",
+    "id": "Omuehqn3c0ahkn"
+   },
+   {
+    "kind": "delete",
+    "collection": "orders",
+    "id": "Omuehqn411z04m"
+   },
+   {
+    "kind": "delete",
+    "collection": "codeChecks",
+    "id": "Omuehqn3c0ahkn"
+   },
+   {
+    "kind": "delete",
+    "collection": "codeChecks",
+    "id": "Omuehqn411z04m"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3100t91"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3101e81"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn32028m4"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3203mw1"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3305wd9"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3306pax"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3307pqq"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn34093x6"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3c0bt6v"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3f0exwh"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3f0gbhq"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3g0i9bm"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3g0khzt"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3h0mrmh"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3k0pyus"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3k0q9kk"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3l0to8k"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3p0xspp"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3p0ylnk"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3r11iwy"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3r15afd"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3s18awn"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3t19muf"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3u1b15d"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3v1f4yk"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3v1hcwb"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3x1i3lo"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3y1lzu3"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3y1o42c"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3z1vzxw"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn3z1yo47"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn42203qx"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn43239l8"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn4325bc9"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn43272ut"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn43290t3"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn442boj3"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn452dl5d"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn452etld"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn452ht7j"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn452lxvs"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn472mp9s"
+   },
+   {
+    "kind": "delete",
+    "collection": "auditLog",
+    "id": "AUmuehqn472nk2y"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3c0c3p4"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3d0dnwy"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3f0f4yk"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0h6rh"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0jk2r"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3g0lyhn"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3h0nay0"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3k0r1mo"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3l0u7oj"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3l0vrrb"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3p0zndv"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3r1208q"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3r13t80"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3r16h7p"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3r17pv1"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3t1anh3"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3u1c9tg"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3y1m14f"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn3z1w7cc"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn4221pb8"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn4222oul"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn4324st7"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn4326ij3"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn4328bdp"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn432akqf"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn452ft7t"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn452ishv"
+   },
+   {
+    "kind": "delete",
+    "collection": "notifications",
+    "id": "Nmuehqn452j30n"
+   },
+   {
+    "kind": "delete",
+    "collection": "settings",
+    "id": "business"
+   },
+   {
+    "kind": "delete",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3k0sr33"
+   },
+   {
+    "kind": "delete",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3r107gk"
+   },
+   {
+    "kind": "delete",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3r14vb6"
+   },
+   {
+    "kind": "delete",
+    "collection": "customerPayments",
+    "id": "PMmuehqn3z1uv32"
+   },
+   {
+    "kind": "delete",
+    "collection": "customerPayments",
+    "id": "PMmuehqn452gdim"
+   },
+   {
+    "kind": "delete",
+    "collection": "deliveryCodes",
+    "id": "Omuehqn3c0ahkn"
+   },
+   {
+    "kind": "delete",
+    "collection": "deliveryCodes",
+    "id": "Omuehqn411z04m"
+   }
+  ]
+ },
+ {
+  "actor": "uid1",
+  "ops": [
+   {
+    "kind": "delete",
+    "collection": "users",
+    "id": "uid1"
+   },
+   {
+    "kind": "delete",
+    "collection": "meta",
+    "id": "setup"
+   }
+  ]
+ }
+]

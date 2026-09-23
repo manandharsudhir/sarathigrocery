@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sarathigrocery/app/injection.dart';
 import 'package:sarathigrocery/core/data/remote_store.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/auth_repository.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
+import 'package:sarathigrocery/features/ordering/domain/entities/customer_order.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/adjustment_type.dart';
@@ -23,6 +25,7 @@ class TestBusiness {
     UserRole.accountant: '9800000002',
     UserRole.employee: '9800000003',
     UserRole.customer: '9800000004',
+    UserRole.delivery: '9800000005',
   };
 
   static Future<TestBusiness> create() async {
@@ -33,7 +36,7 @@ class TestBusiness {
       isTrue,
       reason: owner.auth.loginError,
     );
-    for (final role in [UserRole.accountant, UserRole.employee]) {
+    for (final role in [UserRole.accountant, UserRole.employee, UserRole.delivery]) {
       expect(await owner.employees.createEmployeeAccount(name: role.name, phone: phones[role]!, password: password, role: role, userName: 'Owner'), isNull);
     }
     final gurung = owner.customers.customers.firstWhere((c) => c.name == 'Gurung General Store');
@@ -328,6 +331,46 @@ void main() {
     });
   });
 
+  paymentTests();
+
+  group('business reset', () {
+    test('owner reset erases everything; setup starts fresh with the same phone', () async {
+      final business = await TestBusiness.create();
+      final owner = await business.device(UserRole.owner);
+      final product = owner.inventory.products.first;
+      owner.sales.recordSale(items: [SaleItem(product: product, qty: 1, unitPrice: product.unitPrice)], discountPercent: 0, isCredit: false, userName: 'Owner');
+      await pumpEventQueue();
+      expect(business.store.documentCount, greaterThan(20));
+
+      final ownerUser = owner.auth.currentUser!;
+      await expectLater(owner.settings.resetBusiness(owner: ownerUser, typedName: 'Wrong Shop', password: TestBusiness.password), throwsA(isA<AuthException>()));
+      await expectLater(owner.settings.resetBusiness(owner: ownerUser, typedName: 'Test Shop', password: 'wrong-password'), throwsA(isA<AuthException>()));
+      final accountant = await business.device(UserRole.accountant);
+      await expectLater(accountant.settings.resetBusiness(owner: accountant.auth.currentUser!, typedName: 'Test Shop', password: TestBusiness.password), throwsA(isA<AuthException>()));
+
+      business.store.online = false;
+      await expectLater(owner.settings.resetBusiness(owner: ownerUser, typedName: 'Test Shop', password: TestBusiness.password),
+          throwsA(isA<AuthException>().having((e) => e.message, 'message', contains('No internet'))));
+      expect(business.store.documentCount, greaterThan(20), reason: 'nothing deleted offline');
+      business.store.online = true;
+
+      await owner.settings.resetBusiness(owner: ownerUser, typedName: 'Test Shop', password: TestBusiness.password);
+      await owner.auth.logout();
+      expect(business.store.documentCount, 0);
+
+      final fresh = AppScope(store: business.store, authRepository: business.auth);
+      expect(await fresh.auth.isBusinessSetUp(), isFalse);
+      expect(await fresh.auth.login(TestBusiness.phones[UserRole.employee]!, TestBusiness.password), isFalse, reason: 'old staff profiles are gone');
+      expect(
+        await fresh.auth.setUpBusiness(businessName: 'New Shop', ownerName: 'Owner', phone: TestBusiness.phones[UserRole.owner]!, password: TestBusiness.password, includeSampleData: false),
+        isTrue,
+        reason: fresh.auth.loginError,
+      );
+      expect(fresh.inventory.products, isEmpty);
+      expect(fresh.settings.current.businessName, 'New Shop');
+    });
+  });
+
   group('customer management', () {
     test('add and edit a customer; credit limit changes are audited', () async {
       final owner = await signedIn(UserRole.owner);
@@ -340,6 +383,303 @@ void main() {
       expect(await owner.customers.createLogin(customer, phone: '9855555555', password: 'password123', userName: 'Owner'), isNull);
       expect(owner.customers.loginFor(customer)?.role, UserRole.customer);
       expect(await owner.customers.createLogin(customer, phone: '9855555556', password: 'password123', userName: 'Owner'), contains('already has a login'));
+    });
+  });
+}
+
+
+void paymentTests() {
+  /// Customer owes 5,000 (limit 20,000), orders exactly 5,000, and the
+  /// delivery person is assigned. Returns the devices and the order.
+  Future<({TestBusiness business, AppScope owner, AppScope accountant, AppScope delivery, AppScope customer, CustomerOrder order})> scenario() async {
+    final business = await TestBusiness.create();
+    final owner = await business.device(UserRole.owner);
+    final shop = owner.customers.createCustomer(name: 'Kathmandu Kirana', phone: '9866666666', location: 'Patan', creditLimit: 20000, openingBalance: 5000, userName: 'Owner');
+    expect(await owner.customers.createLogin(shop, phone: '9866666666', password: TestBusiness.password, userName: 'Owner'), isNull);
+    owner.inventory.createProduct(name: 'Ghee 5L', category: 'Oil', unitPrice: 5000, stockQty: 10, reorderLevel: 1);
+    await pumpEventQueue();
+
+    final customer = AppScope(store: business.store, authRepository: business.auth);
+    expect(await customer.auth.login('9866666666', TestBusiness.password), isTrue, reason: customer.auth.loginError);
+    customer.ordering.addToCart(customer.inventory.products.firstWhere((p) => p.name == 'Ghee 5L'), 1);
+    final placed = customer.ordering.placeOrder(customer.customers.customers.single, deliveryType: DeliveryType.delivery, address: 'Patan', userName: 'Kathmandu Kirana', userId: customer.auth.currentUser!.id)!;
+    await pumpEventQueue();
+    expect(placed.overCreditLimit, isFalse, reason: '5,000 owed + 5,000 order is within 20,000');
+
+    final order = owner.ordering.orders.firstWhere((o) => o.id == placed.id);
+    final deliveryUser = owner.ordering.deliverers.firstWhere((u) => u.role == UserRole.delivery);
+    owner.ordering.assign(order, deliveryUser, by: owner.auth.currentUser!);
+    for (final status in [OrderStatus.confirmed, OrderStatus.preparing, OrderStatus.ready]) {
+      owner.ordering.advanceOrderStatus(order, status, userName: 'Owner');
+    }
+    await pumpEventQueue();
+
+    final delivery = await business.device(UserRole.delivery);
+    final accountant = await business.device(UserRole.accountant);
+    return (business: business, owner: owner, accountant: accountant, delivery: delivery, customer: customer, order: order);
+  }
+
+  group('payment verification', () {
+    test('customer pays 7,000 at the door on a 5,000 order: 5,000 settles the order, 2,000 the old balance', () async {
+      final s = await scenario();
+      final order = s.delivery.ordering.orders.single;
+      expect(s.delivery.ordering.deliveryCodeFor(order), isNull, reason: 'the delivery person must not be able to see the code');
+      final code = s.customer.ordering.deliveryCodeFor(s.customer.ordering.orders.single)!;
+
+      s.delivery.ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: 'Delivery', userId: s.delivery.auth.currentUser!.id);
+      final result = await s.delivery.ordering.deliverAndCollect(order, amount: 7000, method: PaymentMethod.cash, deliveryCode: code, collector: s.delivery.auth.currentUser!);
+      await pumpEventQueue();
+
+      final payment = result!;
+      expect(payment.appliedToOrder, 5000);
+      expect(payment.appliedToPreviousBalance, 2000);
+      expect(payment.balanceAfter, 3000);
+      expect(payment.confirmedByCode, isTrue);
+      expect(payment.isPendingHandover, isTrue, reason: 'cash is with the delivery person until the shop counts it');
+
+      final ownerCustomer = s.owner.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      expect(ownerCustomer.outstandingBalance, 3000);
+      final statement = s.owner.payments.statementFor(ownerCustomer);
+      expect(statement.balanced, isTrue);
+      final invoice = s.owner.sales.sales.firstWhere((x) => x.orderId == order.id);
+      expect(statement.dueFor(invoice), 0, reason: 'the order is fully paid');
+      expect(statement.openingPaid, 2000);
+
+      // The customer sees the same thing on their own device.
+      final customerStatement = s.customer.payments.statementFor(s.customer.customers.customers.single);
+      expect(customerStatement.expectedBalance, 3000);
+      expect(customerStatement.balanced, isTrue);
+
+      // Cash only reaches the books when someone else counts it in.
+      final cashBefore = s.accountant.cash.cashInHand;
+      final pending = s.accountant.payments.pendingHandover.single;
+      s.accountant.payments.settle(pending, 7000, receiver: s.accountant.auth.currentUser!);
+      await pumpEventQueue();
+      expect(s.accountant.cash.cashInHand, cashBefore + 7000);
+      expect(s.delivery.payments.payments.single.isSettled, isTrue);
+    });
+
+    test('short handover is recorded against the collector and flagged to the owner', () async {
+      final s = await scenario();
+      final order = s.delivery.ordering.orders.single;
+      s.delivery.ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: 'Delivery');
+      await s.delivery.ordering.deliverAndCollect(order, amount: 7000, method: PaymentMethod.cash, collector: s.delivery.auth.currentUser!);
+      await pumpEventQueue();
+
+      s.accountant.payments.settle(s.accountant.payments.pendingHandover.single, 6500, receiver: s.accountant.auth.currentUser!);
+      await pumpEventQueue();
+
+      expect(s.owner.payments.shortfalls.single.shortfall, 500);
+      expect(s.owner.notificationRepository.notificationsFor(s.owner.auth.currentUser!).any((n) => n.title == 'Cash shortfall'), isTrue);
+      expect(s.owner.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana').outstandingBalance, 3000, reason: 'the customer paid in full; the gap is not theirs');
+    });
+
+    test('nobody receives their own collection; the delivery role cannot receive at all', () async {
+      final s = await scenario();
+      final order = s.delivery.ordering.orders.single;
+      s.delivery.ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: 'Delivery');
+      await s.delivery.ordering.deliverAndCollect(order, amount: 1000, method: PaymentMethod.cash, collector: s.delivery.auth.currentUser!);
+      final payment = s.delivery.payments.payments.single;
+      expect(() => s.delivery.payments.settle(payment, 1000, receiver: s.delivery.auth.currentUser!), throwsA(isA<PaymentException>()));
+
+      // An employee collects at the counter: waits for handover; the accountant's own counter collection settles at once.
+      final employee = await s.business.device(UserRole.employee);
+      final shop = employee.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      expect(employee.payments.record(shop, 500, method: PaymentMethod.cash, collector: employee.auth.currentUser!).isSettled, isFalse);
+      final accountantShop = s.accountant.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      expect(s.accountant.payments.record(accountantShop, 500, method: PaymentMethod.cash, collector: s.accountant.auth.currentUser!).isSettled, isTrue);
+      expect(() => s.accountant.payments.record(accountantShop, 500, method: PaymentMethod.wallet, collector: s.accountant.auth.currentUser!), throwsA(isA<PaymentException>()), reason: 'non-cash needs a reference');
+    });
+
+    test('delivered on credit, later paid at the counter: oldest balance is paid first', () async {
+      final s = await scenario();
+      final order = s.delivery.ordering.orders.single;
+      s.delivery.ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: 'Delivery');
+      final result = await s.delivery.ordering.deliverAndCollect(order, amount: 0, method: PaymentMethod.cash, collector: s.delivery.auth.currentUser!);
+      expect(result, isNull);
+      await pumpEventQueue();
+
+      final shop = s.accountant.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      expect(shop.outstandingBalance, 10000, reason: 'the invoice goes on the balance at delivery');
+      s.accountant.payments.record(shop, 6000, method: PaymentMethod.bank, reference: 'NIC-1234', collector: s.accountant.auth.currentUser!);
+      await pumpEventQueue();
+
+      final statement = s.accountant.payments.statementFor(shop);
+      final invoice = s.accountant.sales.sales.firstWhere((x) => x.orderId == order.id);
+      expect(statement.openingPaid, 5000, reason: 'the old 5,000 is paid off first');
+      expect(statement.dueFor(invoice), 4000);
+      expect(shop.outstandingBalance, 4000);
+      expect(statement.balanced, isTrue);
+    });
+
+    test('customer confirms or disputes; owner reverses a wrong payment and the books still balance', () async {
+      final s = await scenario();
+      final employee = await s.business.device(UserRole.employee);
+      final shop = employee.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      employee.payments.record(shop, 1000, method: PaymentMethod.cash, collector: employee.auth.currentUser!);
+      employee.payments.record(shop, 2000, method: PaymentMethod.cash, collector: employee.auth.currentUser!);
+      await pumpEventQueue();
+
+      final customerUser = s.customer.auth.currentUser!;
+      final mine = s.customer.payments.payments;
+      s.customer.payments.confirm(mine[0], customerUser: customerUser);
+      s.customer.payments.dispute(mine[1], 'I paid 200, not 2,000', customerUser: customerUser);
+      expect(() => s.customer.payments.confirm(mine[1], customerUser: customerUser), throwsA(isA<PaymentException>()));
+      await pumpEventQueue();
+      expect(s.owner.payments.disputed.single.disputeNote, contains('200'));
+
+      final disputed = s.owner.payments.disputed.single;
+      expect(() => s.accountant.payments.reverse(disputed, 'x', owner: s.accountant.auth.currentUser!), throwsA(isA<PaymentException>()), reason: 'owner only');
+      s.owner.payments.reverse(disputed, 'Recorded wrong amount', owner: s.owner.auth.currentUser!);
+      await pumpEventQueue();
+
+      final ownerShop = s.owner.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      expect(ownerShop.outstandingBalance, 4000);
+      expect(s.owner.payments.statementFor(ownerShop).balanced, isTrue);
+      expect(s.customer.payments.statementFor(s.customer.customers.customers.single).expectedBalance, 4000);
+    });
+
+    test('a balance changed outside sales and payments is detected', () async {
+      final s = await scenario();
+      final shop = s.owner.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      s.owner.customers.repository.applyBalanceChange(shop, -1500); // bypasses the payment flow
+      final statement = s.owner.payments.statementFor(shop);
+      expect(statement.balanced, isFalse);
+      expect(statement.unexplainedDifference, -1500);
+    });
+
+    test('orders past the credit limit are flagged', () async {
+      final s = await scenario();
+      final product = s.customer.inventory.products.firstWhere((p) => p.name == 'Ghee 5L');
+      s.customer.ordering.addToCart(product, 3); // 5,000 owed + 5,000 open + 15,000 > 20,000
+      final order = s.customer.ordering.placeOrder(s.customer.customers.customers.single, deliveryType: DeliveryType.pickup, userName: 'x', userId: s.customer.auth.currentUser!.id)!;
+      expect(order.overCreditLimit, isTrue);
+    });
+
+    test('no connection: delivery is refused, nothing is recorded, screens roll back', () async {
+      final s = await scenario();
+      final order = s.delivery.ordering.orders.single;
+      s.delivery.ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: 'Delivery');
+      await pumpEventQueue();
+      final shop = s.delivery.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      final stock = order.items.single.product.stockQty;
+
+      s.business.store.online = false;
+      await expectLater(
+        s.delivery.ordering.deliverAndCollect(order, amount: 7000, method: PaymentMethod.cash, collector: s.delivery.auth.currentUser!),
+        throwsA(isA<PaymentException>().having((e) => e.message, 'message', contains('No internet'))),
+      );
+      await pumpEventQueue();
+
+      expect(order.status, OrderStatus.outForDelivery, reason: 'local copy rolled back');
+      expect(shop.outstandingBalance, 5000);
+      expect(order.items.single.product.stockQty, stock);
+      expect(s.delivery.payments.payments, isEmpty);
+      expect(s.owner.sales.sales.where((x) => x.orderId == order.id), isEmpty, reason: 'nothing reached the server');
+    });
+
+    test('wrong code: refused and rolled back; after 5 tries the order locks until the owner unlocks it', () async {
+      final s = await scenario();
+      final order = s.delivery.ordering.orders.single;
+      s.delivery.ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: 'Delivery');
+      await pumpEventQueue();
+      // Stand-in for the server rule: refuse "code verified" unless the last
+      // registered code is the real one.
+      final realCode = s.customer.ordering.deliveryCodeFor(s.customer.ordering.orders.single)!;
+      String? registered;
+      s.business.store.rejectIf = (ops) {
+        for (final op in ops) {
+          if (op is PutOp && op.collection == 'codeChecks' && op.data.containsKey('lastCode')) registered = op.data['lastCode'];
+          if (op is PutOp && op.collection == 'codeChecks' && op.data['verified'] == true && registered != realCode) return true;
+        }
+        return false;
+      };
+      final me = s.delivery.auth.currentUser!;
+
+      for (var i = 1; i <= 5; i++) {
+        await expectLater(
+          s.delivery.ordering.deliverAndCollect(order, amount: 7000, method: PaymentMethod.cash, deliveryCode: '00000$i', collector: me),
+          throwsA(isA<PaymentException>().having((e) => e.message, 'message', contains('${5 - i} attempt'))),
+        );
+        await pumpEventQueue();
+        expect(order.status, OrderStatus.outForDelivery);
+      }
+      await expectLater(
+        s.delivery.ordering.deliverAndCollect(order, amount: 7000, method: PaymentMethod.cash, deliveryCode: realCode, collector: me),
+        throwsA(isA<PaymentException>().having((e) => e.message, 'message', contains('Too many'))),
+      );
+
+      s.owner.ordering.resetCodeAttempts(s.owner.ordering.orders.firstWhere((o) => o.id == order.id), by: s.owner.auth.currentUser!);
+      await pumpEventQueue();
+      final payment = await s.delivery.ordering.deliverAndCollect(order, amount: 7000, method: PaymentMethod.cash, deliveryCode: realCode, collector: me);
+      expect(payment!.confirmedByCode, isTrue);
+      expect(order.status, OrderStatus.delivered);
+    });
+
+    test('reversing a payment already in the till refunds it out of the till', () async {
+      final s = await scenario();
+      final shop = s.accountant.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      final cashBefore = s.accountant.cash.cashInHand;
+      s.accountant.payments.record(shop, 2000, method: PaymentMethod.cash, collector: s.accountant.auth.currentUser!);
+      await pumpEventQueue();
+      expect(s.accountant.cash.cashInHand, cashBefore + 2000);
+
+      s.owner.payments.reverse(s.owner.payments.payments.single, 'Wrong customer', owner: s.owner.auth.currentUser!);
+      await pumpEventQueue();
+      expect(s.owner.cash.cashInHand, cashBefore, reason: 'refund entry takes it back out');
+      final ownerShop = s.owner.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      expect(ownerShop.outstandingBalance, 5000);
+      expect(s.owner.payments.statementFor(ownerShop).balanced, isTrue);
+    });
+
+    test('bank, wallet and cheque money lands in those accounts; deposits move cash to bank', () async {
+      final s = await scenario();
+      final shop = s.accountant.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      final a = s.accountant.auth.currentUser!;
+      s.accountant.payments.record(shop, 1000, method: PaymentMethod.bank, reference: 'NIC-1', collector: a);
+      s.accountant.payments.record(shop, 500, method: PaymentMethod.wallet, reference: 'ESEWA-9', collector: a);
+      s.accountant.payments.record(shop, 300, method: PaymentMethod.cheque, reference: 'CHQ-7', collector: a);
+      s.accountant.payments.record(shop, 800, method: PaymentMethod.cash, collector: a);
+      s.accountant.cash.addBankDeposit(600, '');
+      await pumpEventQueue();
+
+      expect(s.accountant.cash.bankBalance, 1000 + 300 + 600);
+      expect(s.accountant.cash.walletBalance, 500);
+      expect(s.accountant.cash.cashInHand, 800 - 600);
+    });
+
+    test('orders delivered before invoicing existed can be billed by the owner', () async {
+      final s = await scenario();
+      final order = s.owner.ordering.orders.single;
+      // A delivered order with no invoice, as older versions left them.
+      await s.business.store.commit([PutOp('orders', order.id, {'status': 'delivered'})]);
+      await pumpEventQueue();
+      expect(s.owner.ordering.uninvoicedDeliveries.map((o) => o.id), [order.id]);
+
+      expect(s.owner.ordering.invoiceUninvoicedDeliveries(by: s.owner.auth.currentUser!), 1);
+      await pumpEventQueue();
+      final shop = s.owner.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      expect(shop.outstandingBalance, 10000);
+      expect(s.owner.ordering.uninvoicedDeliveries, isEmpty);
+      expect(s.owner.payments.statementFor(shop).balanced, isTrue);
+    });
+
+    test('customers and delivery staff never receive cost prices; audit entries carry the author', () async {
+      final s = await scenario();
+      final staffGhee = s.owner.inventory.products.firstWhere((p) => p.name == 'Basmati Rice 25kg');
+      expect(staffGhee.purchasePrice, 2800);
+      for (final device in [s.customer, s.delivery]) {
+        expect(device.inventory.products.firstWhere((p) => p.name == 'Basmati Rice 25kg').purchasePrice, 0);
+      }
+      expect(s.owner.auditRepository.entries.first.userId, isNotNull);
+    });
+
+    test('delivery staff only load their assigned orders and own collections', () async {
+      final s = await scenario();
+      expect(s.delivery.ordering.orders, hasLength(1));
+      expect(s.delivery.sales.sales, isEmpty);
+      expect(s.delivery.cash.ledger, isEmpty);
+      expect(s.delivery.customers.customers, isNotEmpty, reason: 'needs address and balance to collect');
     });
   });
 }
@@ -357,8 +697,11 @@ class _RecordingStore implements RemoteStore {
   Future<Json?> get(String collection, String id) => _inner.get(collection, id);
 
   @override
-  Future<void> commit(List<WriteOp> ops) {
+  Future<List<String>> listIds(String collection) => _inner.listIds(collection);
+
+  @override
+  Future<void> commit(List<WriteOp> ops, {bool requireOnline = false}) {
     commits.add(ops);
-    return _inner.commit(ops);
+    return _inner.commit(ops, requireOnline: requireOnline);
   }
 }

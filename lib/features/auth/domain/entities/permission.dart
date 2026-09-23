@@ -22,6 +22,14 @@ enum Permission {
   manageEmployees,
   managePermissions,
   manageSettings,
+
+  /// Be assigned orders, mark them out-for-delivery/delivered, and record
+  /// what the customer paid at the door.
+  deliverOrders,
+
+  /// Count cash handed over by collectors into the till, and verify
+  /// wallet/bank/cheque payments. Collecting and receiving are kept apart.
+  reconcileCash,
 }
 
 const Map<UserRole, Set<Permission>> defaultRolePermissions = {
@@ -47,6 +55,8 @@ const Map<UserRole, Set<Permission>> defaultRolePermissions = {
     Permission.manageEmployees,
     Permission.managePermissions,
     Permission.manageSettings,
+    Permission.deliverOrders,
+    Permission.reconcileCash,
   },
   UserRole.accountant: {
     Permission.viewSales,
@@ -61,12 +71,17 @@ const Map<UserRole, Set<Permission>> defaultRolePermissions = {
     Permission.manageExpenses,
     Permission.viewAccounting,
     Permission.viewReports,
+    Permission.reconcileCash,
   },
   UserRole.employee: {
     Permission.viewSales,
     Permission.createSales,
     Permission.viewCustomers,
     Permission.recordPayments,
+    Permission.deliverOrders,
+  },
+  UserRole.delivery: {
+    Permission.deliverOrders,
   },
   UserRole.customer: {},
 };

@@ -8,6 +8,7 @@ class CashLedgerEntry {
     required this.amount,
     required this.note,
     this.reference = '',
+    this.account = LedgerAccount.cash,
   });
 
   final String id;
@@ -16,4 +17,14 @@ class CashLedgerEntry {
   final double amount;
   final String note;
   final String reference;
+  final LedgerAccount account;
+
+  /// Money leaving [account]. A deposit leaves cash but arrives in the bank.
+  bool get isOutflow => switch (type) {
+        CashEntryType.expense || CashEntryType.supplierPayment || CashEntryType.refund => true,
+        CashEntryType.deposit => account == LedgerAccount.cash,
+        _ => false,
+      };
+
+  double get signedAmount => isOutflow ? -amount : amount;
 }

@@ -27,9 +27,10 @@ class CustomerRepositoryImpl implements CustomerRepository {
       'outstandingBalance': c.outstandingBalance,
       'lastPaymentDate': c.lastPaymentDate == null ? null : toMillis(c.lastPaymentDate!),
       'defaultDiscountPercent': c.defaultDiscountPercent,
+      'openingBalance': c.openingBalance,
     },
     fromJson: (j) {
-      final c = Customer(id: j['id'], name: '', phone: '', location: '', creditLimit: 0);
+      final c = Customer(id: j['id'], name: '', phone: '', location: '', creditLimit: 0, openingBalance: (j['openingBalance'] as num?)?.toDouble());
       _mergeCustomer(c, j);
       return c;
     },
@@ -45,8 +46,17 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Customer? byId(String? id) => _customers.byId(id);
 
   @override
-  Customer create({required String name, required String phone, required String location, required double creditLimit, double defaultDiscountPercent = 0}) {
-    final customer = Customer(id: nextId('C'), name: name, phone: phone, location: location, creditLimit: creditLimit, defaultDiscountPercent: defaultDiscountPercent);
+  Customer create({required String name, required String phone, required String location, required double creditLimit, double defaultDiscountPercent = 0, double openingBalance = 0}) {
+    final customer = Customer(
+      id: nextId('C'),
+      name: name,
+      phone: phone,
+      location: location,
+      creditLimit: creditLimit,
+      defaultDiscountPercent: defaultDiscountPercent,
+      outstandingBalance: openingBalance,
+      openingBalance: openingBalance,
+    );
     _customers.add(customer);
     return customer;
   }

@@ -23,6 +23,7 @@ class SaleRepositoryImpl implements SaleRepository {
             'status': s.status.name,
             'createdByUserId': s.createdByUserId,
             'createdByName': s.createdByName,
+            'orderId': s.orderId,
           },
           fromJson: (j) {
             final items = <SaleItem>[];
@@ -44,6 +45,7 @@ class SaleRepositoryImpl implements SaleRepository {
               status: SaleStatus.values.byName(j['status'] ?? SaleStatus.completed.name),
               createdByUserId: j['createdByUserId'],
               createdByName: j['createdByName'] ?? '',
+              orderId: j['orderId'],
             );
           },
           merge: (s, j) => s
@@ -81,6 +83,7 @@ class SaleRepositoryImpl implements SaleRepository {
     required bool flaggedForApproval,
     String? createdByUserId,
     String createdByName = '',
+    String? orderId,
   }) {
     final sale = Sale(
       id: nextId('S'),
@@ -92,6 +95,7 @@ class SaleRepositoryImpl implements SaleRepository {
       flaggedForApproval: flaggedForApproval,
       createdByUserId: createdByUserId,
       createdByName: createdByName,
+      orderId: orderId,
     );
     _sales.add(sale);
     return sale;

@@ -14,6 +14,7 @@ class Sale {
     this.status = SaleStatus.completed,
     this.createdByUserId,
     this.createdByName = '',
+    this.orderId,
   });
 
   final String id;
@@ -26,6 +27,9 @@ class Sale {
   SaleStatus status;
   final String? createdByUserId;
   final String createdByName;
+
+  /// Set when this sale is the invoice for a delivered customer order.
+  final String? orderId;
 
   double get subtotal => items.fold(0, (sum, i) => sum + i.lineTotal);
   double get discountAmount => subtotal * discountPercent / 100;

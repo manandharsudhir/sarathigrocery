@@ -77,6 +77,7 @@ class EmployeesScreen extends StatelessWidget {
                 items: const [
                   DropdownMenuItem(value: UserRole.employee, child: Text('Shop Employee')),
                   DropdownMenuItem(value: UserRole.accountant, child: Text('Accountant')),
+                  DropdownMenuItem(value: UserRole.delivery, child: Text('Delivery')),
                 ],
                 onChanged: (v) => setSheetState(() => role = v ?? role),
               ),

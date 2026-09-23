@@ -13,7 +13,7 @@ class CreateEmployeeAccount {
 
   /// Returns an error message, or null on success.
   Future<String?> call({required String name, required String phone, required String password, required UserRole role, required String userName}) async {
-    if (role == UserRole.owner || role == UserRole.customer) return 'Employees can only be accountants or shop employees.';
+    if (role == UserRole.owner || role == UserRole.customer) return 'Employees can only be accountants, shop employees or delivery staff.';
     final problem = passwordProblem(password);
     if (problem != null) return problem;
     if (_users.findByPhone(phone) != null) return 'Phone number $phone is already registered.';

@@ -34,8 +34,14 @@ class SetUpBusiness {
     if (problem != null) throw AuthException(problem);
     if (await _users.isBusinessSetUp()) throw AuthException('This business is already set up. Log in instead.');
 
-    final id = await _auth.createAccount(phone, password) ?? (throw AuthException('Phone number $phone is already registered. Log in instead.'));
-    if (await _auth.signIn(phone, password) == null) throw AuthException('Could not sign in to the new account.');
+    // A login may already exist for this phone (e.g. the owner after a
+    // business reset — logins outlive business data). Reuse it if the
+    // password matches; no business exists, so there's nothing to take over.
+    final created = await _auth.createAccount(phone, password);
+    final id = await _auth.signIn(phone, password);
+    if (id == null) {
+      throw AuthException(created == null ? 'Phone number $phone is already registered with a different password.' : 'Could not sign in to the new account.');
+    }
 
     _users.addFirstOwner(AppUser(id: id, name: ownerName.trim(), phone: phone, role: UserRole.owner));
     await _commit();
