@@ -1,0 +1,180 @@
+rules_version = '2';
+
+// Server-side enforcement for the Firebase backend. Mirrors, and must stay
+// in step with:
+//   - lib/features/auth/domain/entities/permission.dart  (role defaults)
+//   - AppScope._loadPlan in lib/app/injection.dart        (what each role reads)
+// Tested by firestore_tests/ (run against the emulator).
+//
+// Model: staff (owner/accountant/employee) read the whole business; each
+// write needs the permission the app checks for that action. Customers read
+// the catalogue plus their own profile/account/orders/notifications, and
+// may only place orders. Deactivated accounts can do nothing. Ledgers and
+// the audit log are append-only.
+//
+// When migrating to your own backend these checks move into its API; this
+// file is deleted along with the Firebase implementations.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function me() { return get(userPath(request.auth.uid)).data; }
+    function hasProfile() { return request.auth != null && exists(userPath(request.auth.uid)); }
+    function active() { return hasProfile() && me().active == true; }
+    function role() { return me().role; }
+    function staff() { return active() && role() in ['owner', 'accountant', 'employee']; }
+    function customer() { return active() && role() == 'customer'; }
+    function isOwner() { return active() && role() == 'owner'; }
+
+    function defaultPermissions(r) {
+      return r == 'owner' ? [
+          'viewSales', 'createSales', 'editSales', 'cancelSales', 'viewPurchases', 'createPurchases',
+          'manageInventory', 'adjustInventory', 'viewCustomers', 'manageCustomers', 'viewSuppliers',
+          'manageSuppliers', 'recordPayments', 'manageExpenses', 'viewAccounting', 'viewReports',
+          'manageProducts', 'changePrices', 'manageEmployees', 'managePermissions', 'manageSettings']
+        : r == 'accountant' ? [
+          'viewSales', 'createSales', 'viewPurchases', 'createPurchases', 'viewCustomers', 'manageCustomers',
+          'viewSuppliers', 'manageSuppliers', 'recordPayments', 'manageExpenses', 'viewAccounting', 'viewReports']
+        : r == 'employee' ? ['viewSales', 'createSales', 'viewCustomers', 'recordPayments']
+        : [];
+    }
+
+    // Per-account override replaces (not extends) the role default.
+    function permissions() {
+      return me().get('customPermissions', null) != null ? me().customPermissions : defaultPermissions(role());
+    }
+
+    function can(p) { return staff() && p in permissions(); }
+
+    function changedOnly(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // ---- First-run setup: exactly one owner, only while no business exists.
+
+    match /meta/setup {
+      allow get: if true; // lets the login screen offer "set up" only when relevant
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['ownerId'])
+        && request.resource.data.ownerId == request.auth.uid
+        && getAfter(userPath(request.auth.uid)).data.role == 'owner';
+      // No update/delete: a second setup attempt is an update, and fails.
+    }
+
+    match /users/{userId} {
+      allow read: if staff() || (active() && userId == request.auth.uid);
+
+      allow create: if
+        // Setup: the owner profile is created in the same batch as meta/setup.
+        (request.auth != null && userId == request.auth.uid
+          && request.resource.data.role == 'owner'
+          && request.resource.data.active == true
+          && !exists(/databases/$(database)/documents/meta/setup)
+          && existsAfter(/databases/$(database)/documents/meta/setup))
+        || (can('manageEmployees') && request.resource.data.role in ['accountant', 'employee'])
+        || (can('manageCustomers') && request.resource.data.role == 'customer'
+          && exists(/databases/$(database)/documents/customers/$(request.resource.data.linkedCustomerId)));
+
+      // Nobody edits themselves or the owner; role/phone/link never change.
+      allow update: if userId != request.auth.uid
+        && resource.data.role != 'owner'
+        && changedOnly(['name', 'active', 'customPermissions'])
+        && (resource.data.role == 'customer' ? can('manageCustomers') : can('manageEmployees'))
+        && (!('customPermissions' in request.resource.data.diff(resource.data).affectedKeys()) || can('managePermissions'));
+    }
+
+    match /settings/{doc} {
+      allow read: if active();
+      allow write: if can('manageSettings');
+    }
+
+    match /categories/{name} {
+      allow read: if active();
+      allow create, delete: if can('manageProducts');
+    }
+
+    match /products/{productId} {
+      allow read: if active();
+      allow create: if can('manageProducts');
+      allow update: if can('manageProducts')
+        // Sales, purchases, returns, adjustments and deliveries move stock;
+        // receiving a purchase also records its latest cost.
+        || (staff() && changedOnly(['stockQty', 'reservedQty', 'purchasePrice']))
+        // Placing an order reserves stock (customers can't cancel, so only up).
+        || (customer() && changedOnly(['reservedQty']) && request.resource.data.reservedQty > resource.data.reservedQty);
+    }
+
+    match /stockAdjustments/{id} {
+      allow read: if staff();
+      allow create: if can('adjustInventory');
+    }
+
+    match /customers/{customerId} {
+      allow read: if staff() || (customer() && customerId == me().linkedCustomerId);
+      allow create: if can('manageCustomers');
+      allow update: if can('manageCustomers')
+        // Credit sales, cancellations, returns and payments move the balance.
+        || (staff() && changedOnly(['outstandingBalance', 'lastPaymentDate']));
+    }
+
+    match /suppliers/{id} {
+      allow read: if staff();
+      allow create: if can('manageSuppliers');
+      allow update: if can('manageSuppliers') || (staff() && changedOnly(['amountPayable']));
+    }
+
+    match /purchases/{id} {
+      allow read: if staff();
+      allow create: if can('createPurchases');
+    }
+
+    match /purchaseReturns/{id} {
+      allow read: if staff();
+      allow create: if can('createPurchases');
+    }
+
+    match /sales/{id} {
+      allow read: if staff();
+      allow create: if can('createSales') && request.resource.data.status == 'completed';
+      allow update: if (can('cancelSales') || can('editSales'))
+        && changedOnly(['status', 'flaggedForApproval'])
+        && resource.data.status == 'completed';
+    }
+
+    // Append-only money records.
+    match /cashLedger/{id} {
+      allow read: if staff();
+      allow create: if staff();
+    }
+
+    match /expenses/{id} {
+      allow read: if staff();
+      allow create: if can('manageExpenses');
+    }
+
+    match /partnerLedger/{id} {
+      allow read: if staff();
+      allow create: if can('viewAccounting');
+    }
+
+    match /orders/{orderId} {
+      allow read: if staff() || (customer() && resource.data.customerId == me().linkedCustomerId);
+      allow create: if customer()
+        && request.resource.data.customerId == me().linkedCustomerId
+        && request.resource.data.status == 'placed';
+      allow update: if staff() && changedOnly(['status', 'updatedDate', 'paid']);
+    }
+
+    match /auditLog/{id} {
+      allow read: if isOwner();
+      allow create: if active();
+    }
+
+    match /notifications/{id} {
+      allow read: if staff() || (customer() && resource.data.targetUserId == request.auth.uid);
+      allow create: if active();
+      allow update: if changedOnly(['read'])
+        && (staff() || (customer() && resource.data.targetUserId == request.auth.uid));
+    }
+  }
+}
