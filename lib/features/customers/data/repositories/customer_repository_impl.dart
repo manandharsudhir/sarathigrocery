@@ -12,7 +12,8 @@ void _mergeCustomer(Customer c, Json j) {
     ..creditLimit = toDouble(j['creditLimit'])
     ..outstandingBalance = toDouble(j['outstandingBalance'])
     ..lastPaymentDate = fromMillisOrNull(j['lastPaymentDate'])
-    ..defaultDiscountPercent = toDouble(j['defaultDiscountPercent']);
+    ..defaultDiscountPercent = toDouble(j['defaultDiscountPercent'])
+    ..hasAppLogin = j['hasAppLogin'] ?? false;
 }
 
 class CustomerRepositoryImpl implements CustomerRepository {
@@ -28,6 +29,7 @@ class CustomerRepositoryImpl implements CustomerRepository {
       'lastPaymentDate': c.lastPaymentDate == null ? null : toMillis(c.lastPaymentDate!),
       'defaultDiscountPercent': c.defaultDiscountPercent,
       'openingBalance': c.openingBalance,
+      'hasAppLogin': c.hasAppLogin,
     },
     fromJson: (j) {
       final c = Customer(id: j['id'], name: '', phone: '', location: '', creditLimit: 0, openingBalance: (j['openingBalance'] as num?)?.toDouble());

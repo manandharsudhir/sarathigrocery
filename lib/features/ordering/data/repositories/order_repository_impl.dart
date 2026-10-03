@@ -29,6 +29,9 @@ class OrderRepositoryImpl implements OrderRepository {
             'assignedToId': o.assignedToId,
             'assignedToName': o.assignedToName,
             'overCreditLimit': o.overCreditLimit,
+            'placedByStaffName': o.placedByStaffName,
+            'receivedSignature': o.receivedSignature,
+            'receivedBy': o.receivedBy,
           },
           fromJson: (j) {
             final customer = customers.byId(j['customerId']);
@@ -54,13 +57,18 @@ class OrderRepositoryImpl implements OrderRepository {
               assignedToId: j['assignedToId'],
               assignedToName: j['assignedToName'] ?? '',
               overCreditLimit: j['overCreditLimit'] ?? false,
+              placedByStaffName: j['placedByStaffName'] ?? '',
+              receivedSignature: j['receivedSignature'],
+              receivedBy: j['receivedBy'] ?? '',
             );
           },
           merge: (o, j) => o
             ..status = OrderStatus.values.byName(j['status'])
             ..updatedDate = fromMillis(j['updatedDate'])
             ..assignedToId = j['assignedToId']
-            ..assignedToName = j['assignedToName'] ?? '',
+            ..assignedToName = j['assignedToName'] ?? ''
+            ..receivedSignature = j['receivedSignature']
+            ..receivedBy = j['receivedBy'] ?? '',
         );
 
   final SyncedCollection<CustomerOrder> _orders;
@@ -154,6 +162,7 @@ class OrderRepositoryImpl implements OrderRepository {
     required String notes,
     String? placedByUserId,
     bool overCreditLimit = false,
+    String placedByStaffName = '',
   }) {
     final order = CustomerOrder(
       id: nextId('O'),
@@ -167,9 +176,18 @@ class OrderRepositoryImpl implements OrderRepository {
       updatedDate: DateTime.now(),
       placedByUserId: placedByUserId,
       overCreditLimit: overCreditLimit,
+      placedByStaffName: placedByStaffName,
     );
     _orders.add(order);
     return order;
+  }
+
+  @override
+  void recordReceipt(CustomerOrder order, {required String signature, required String receivedBy}) {
+    order
+      ..receivedSignature = signature
+      ..receivedBy = receivedBy;
+    _orders.save(order);
   }
 
   @override

@@ -49,6 +49,10 @@ class CustomerPayment {
     required this.collectedById,
     required this.collectedByName,
     this.deliveryCode,
+    this.signature,
+    this.signedName = '',
+    this.phoneConfirmedAt,
+    this.phoneConfirmedByName = '',
     this.customerConfirmedAt,
     this.disputedAt,
     this.disputeNote = '',
@@ -84,6 +88,20 @@ class CustomerPayment {
   /// payment if it matches that order's code, so non-null = verified.
   final String? deliveryCode;
 
+  /// Customer's handwritten signature (encoded `Signature`) and the name
+  /// they gave, captured on the collector's phone — for customers without
+  /// the app, or as extra proof.
+  final String? signature;
+  final String signedName;
+
+  /// Staff other than the collector phoned the customer, who confirmed.
+  DateTime? phoneConfirmedAt;
+  String phoneConfirmedByName;
+
+  /// Who recorded the dispute (the customer in the app, or staff on their
+  /// behalf after a call).
+  String disputedByName = '';
+
   DateTime? customerConfirmedAt;
   DateTime? disputedAt;
   String disputeNote;
@@ -101,7 +119,8 @@ class CustomerPayment {
   bool get isSettled => settledAt != null;
   bool get isDisputed => disputedAt != null;
   bool get confirmedByCode => deliveryCode != null;
-  bool get isCustomerConfirmed => confirmedByCode || customerConfirmedAt != null;
+  bool get confirmedBySignature => signature != null;
+  bool get isCustomerConfirmed => confirmedByCode || confirmedBySignature || customerConfirmedAt != null || phoneConfirmedAt != null;
 
   /// Counted less than collected — owed by the collector.
   double get shortfall => isSettled ? amount - settledAmount! : 0;

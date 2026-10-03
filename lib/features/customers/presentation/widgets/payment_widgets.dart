@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/core/widgets/signature_pad.dart';
 import 'package:sarathigrocery/core/widgets/status_badge.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
+import 'package:sarathigrocery/features/customers/presentation/pdf/payment_documents.dart';
 
 /// Customer-side verification state.
 (String, Color) paymentVerificationVisual(CustomerPayment p) {
   if (p.isReversed) return ('Reversed', Colors.grey);
   if (p.isDisputed) return ('Disputed', Colors.red);
   if (p.confirmedByCode) return ('Confirmed by code', Colors.green);
+  if (p.confirmedBySignature) return ('Signed by customer', Colors.green);
+  if (p.phoneConfirmedAt != null) return ('Confirmed by phone', Colors.green);
   if (p.customerConfirmedAt != null) return ('Confirmed by customer', Colors.green);
   return ('Awaiting customer confirmation', Colors.amber);
 }
@@ -41,9 +45,12 @@ class PaymentStatusRow extends StatelessWidget {
 
 /// The receipt both sides see.
 class PaymentReceipt extends StatelessWidget {
-  const PaymentReceipt({super.key, required this.payment});
+  const PaymentReceipt({super.key, required this.payment, this.businessName});
 
   final CustomerPayment payment;
+
+  /// When given, a "Share receipt" (PDF) button is shown.
+  final String? businessName;
 
   @override
   Widget build(BuildContext context) {
@@ -64,17 +71,50 @@ class PaymentReceipt extends StatelessWidget {
           row('Collected by', '${p.collectedByName} · ${formatDate(p.date)}'),
           if (p.isSettled) row(p.method == PaymentMethod.cash ? 'Counted into till by' : 'Verified by', '${p.settledByName} · ${formatNpr(p.settledAmount!)}'),
         ]),
-        if (p.isDisputed) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Customer reported: "${p.disputeNote}"', style: const TextStyle(color: Colors.red))),
+        if (p.phoneConfirmedAt != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Confirmed by phone call with ${p.phoneConfirmedByName}, ${formatDate(p.phoneConfirmedAt!)}')),
+        if (p.isDisputed)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text('Reported${p.disputedByName.isEmpty ? '' : ' via ${p.disputedByName}'}: "${p.disputeNote}"', style: const TextStyle(color: Colors.red)),
+          ),
         if (p.isReversed) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Reversed by ${p.reversedByName}: ${p.reversalReason}', style: const TextStyle(color: Colors.grey))),
+        if (Signature.decode(p.signature) case final signature?) ...[
+          const SizedBox(height: 6),
+          SignatureView(signature: signature),
+          Text('Signed by ${p.signedName}', style: Theme.of(context).textTheme.bodySmall),
+        ],
         const SizedBox(height: 6),
         PaymentStatusRow(payment: p),
+        if (businessName != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Share receipt'),
+              onPressed: () async => sharePdf(await paymentReceiptPdf(p, businessName: businessName!), 'receipt-${p.id}.pdf'),
+            ),
+          ),
       ],
     );
   }
 }
 
+/// Everything the collector captured in [CollectPaymentForm].
+class CollectInput {
+  const CollectInput({required this.amount, required this.method, required this.reference, required this.code, this.signature, this.signedName = ''});
+
+  final double amount;
+  final PaymentMethod method;
+  final String reference;
+  final String code;
+
+  /// Encoded [Signature], or null if the customer didn't sign.
+  final String? signature;
+  final String signedName;
+}
+
 /// What the collector enters: amount, method, reference, and (at the door)
-/// the customer's delivery code. Shows the receipt split live, so the
+/// the customer's delivery code and/or signature. Shows the receipt split live, so the
 /// customer can check it before handing over.
 class CollectPaymentForm extends StatefulWidget {
   const CollectPaymentForm({
@@ -86,6 +126,7 @@ class CollectPaymentForm extends StatefulWidget {
     this.orderAlreadyPaid = 0,
     this.askForCode = false,
     this.allowZero = false,
+    this.signatureRequired = false,
   });
 
   final Customer customer;
@@ -99,9 +140,12 @@ class CollectPaymentForm extends StatefulWidget {
   /// Delivery on credit: 0 is a valid "paid nothing now".
   final bool allowZero;
 
+  /// Customer has no app to confirm later: they must sign here.
+  final bool signatureRequired;
+
   /// Returns a message to show on success (then the sheet closes), or
   /// throws [PaymentException].
-  final Future<String> Function(double amount, PaymentMethod method, String reference, String code) onSubmit;
+  final Future<String> Function(CollectInput input) onSubmit;
 
   @override
   State<CollectPaymentForm> createState() => _CollectPaymentFormState();
@@ -111,6 +155,9 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
   late final _amount = TextEditingController(text: widget.orderTotal == null ? '' : (widget.orderTotal! - widget.orderAlreadyPaid).toStringAsFixed(0));
   final _reference = TextEditingController();
   final _code = TextEditingController();
+  final _signedName = TextEditingController();
+  Signature? _signature;
+  late bool _showSignature = widget.signatureRequired;
   PaymentMethod _method = PaymentMethod.cash;
   bool _busy = false;
   String? _error;
@@ -128,7 +175,16 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
       if (widget.askForCode && _value > 0 && code.isNotEmpty && !RegExp(r'^\d{6}$').hasMatch(code)) {
         throw PaymentException('The delivery code is 6 digits. Leave it empty if the customer cannot give it.');
       }
-      final message = await widget.onSubmit(_value, _method, _reference.text, _code.text);
+      if (widget.signatureRequired && _signature == null) throw PaymentException('${widget.customer.name} has no app — they must sign below.');
+      if (_signature != null && _signedName.text.trim().isEmpty) throw PaymentException('Enter the name of the person who signed.');
+      final message = await widget.onSubmit(CollectInput(
+        amount: _value,
+        method: _method,
+        reference: _reference.text,
+        code: _code.text,
+        signature: _signature?.encode(),
+        signedName: _signedName.text,
+      ));
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context);
@@ -191,6 +247,14 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
                 ),
               ),
             ],
+            const SizedBox(height: 8),
+            if (_showSignature) ...[
+              Text(widget.signatureRequired ? 'Customer signature (required — no app)' : 'Customer signature', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 4),
+              SignaturePad(onChanged: (sig) => setState(() => _signature = sig)),
+              TextField(controller: _signedName, decoration: const InputDecoration(labelText: 'Name of person signing')),
+            ] else
+              TextButton.icon(onPressed: () => setState(() => _showSignature = true), icon: const Icon(Icons.draw_outlined), label: const Text('Customer signs instead / as well')),
             if (_value > 0) ...[
               const SizedBox(height: 8),
               Card(

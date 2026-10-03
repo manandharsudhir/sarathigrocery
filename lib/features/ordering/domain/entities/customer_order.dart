@@ -19,6 +19,9 @@ class CustomerOrder {
     this.assignedToId,
     this.assignedToName = '',
     this.overCreditLimit = false,
+    this.placedByStaffName = '',
+    this.receivedSignature,
+    this.receivedBy = '',
   });
 
   final String id;
@@ -42,6 +45,13 @@ class CustomerOrder {
   /// Outstanding balance + open orders + this one exceeded the credit limit
   /// when placed; staff decide whether to deliver on credit.
   final bool overCreditLimit;
+
+  /// Set when staff placed it for the customer (phone/WhatsApp order).
+  final String placedByStaffName;
+
+  /// Customer's signature and name when the goods were handed over.
+  String? receivedSignature;
+  String receivedBy;
 
   double get subtotal => items.fold(0.0, (sum, i) => sum + i.lineTotal);
   double get total => subtotal - subtotal * discountPercent / 100;

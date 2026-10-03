@@ -138,18 +138,19 @@ class AppScope {
       settlePayment,
       RespondToPayment(paymentRepository, auditRepository, notificationRepository),
       ReversePayment(customerRepository, paymentRepository, cashRepository, userRepository, auditRepository, notificationRepository),
+      () => settingsRepository.current.businessName,
     );
 
     return AppScope._(
       auth: AuthController(userRepository, authRepo, setUpBusiness, connect: connect, disconnect: disconnect),
       inventory: InventoryController(productRepository, auditRepository, notificationRepository),
-      customers: CustomersController(customerRepository, auditRepository, userRepository, authRepo, payments),
+      customers: CustomersController(customerRepository, auditRepository, userRepository, authRepo, payments, notificationRepository),
       payments: payments,
       suppliers: SuppliersController(supplierRepository, auditRepository, cashRepository),
       sales: SalesController(saleRepository, productRepository, customerRepository, cashRepository, auditRepository, notificationRepository),
       purchasing: PurchasingController(purchaseRepository, productRepository, supplierRepository, cashRepository, auditRepository, notificationRepository),
       cash: CashController(cashRepository),
-      ordering: OrderingController(orderRepository, productRepository, saleRepository, customerRepository, auditRepository, notificationRepository, userRepository, recordPayment, paymentRepository, writes.flush),
+      ordering: OrderingController(orderRepository, productRepository, saleRepository, customerRepository, auditRepository, notificationRepository, userRepository, recordPayment, paymentRepository, writes.flush, () => settingsRepository.current.businessName),
       employees: EmployeesController(userRepository, authRepo, auditRepository),
       settings: SettingsController(settingsRepository, authRepo, wipeBackend),
       auditRepository: auditRepository,

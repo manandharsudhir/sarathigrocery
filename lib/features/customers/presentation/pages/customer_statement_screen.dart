@@ -8,6 +8,8 @@ import 'package:sarathigrocery/features/customers/domain/entities/customer.dart'
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_statement.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/payments_controller.dart';
+import 'package:sarathigrocery/features/customers/presentation/pdf/payment_documents.dart';
+import 'package:sarathigrocery/features/customers/presentation/widgets/payment_sheet.dart';
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_widgets.dart';
 
 /// The account both sides trust: every bill and payment, running balance,
@@ -29,7 +31,16 @@ class CustomerStatementScreen extends StatelessWidget {
         final lines = statement.lines.reversed.toList();
         final isCustomer = auth.currentUser?.role == UserRole.customer;
         return Scaffold(
-          appBar: AppBar(title: Text(isCustomer ? 'My Statement' : 'Statement · ${customer.name}')),
+          appBar: AppBar(
+            title: Text(isCustomer ? 'My Statement' : 'Statement · ${customer.name}'),
+            actions: [
+              IconButton(
+                tooltip: 'Share as PDF',
+                icon: const Icon(Icons.share_outlined),
+                onPressed: () async => sharePdf(await statementPdf(customer, statement, businessName: payments.businessName), 'statement-${customer.id}.pdf'),
+              ),
+            ],
+          ),
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -70,64 +81,7 @@ class CustomerStatementScreen extends StatelessWidget {
     );
   }
 
-  void _openPayment(BuildContext context, CustomerPayment payment, bool isCustomer) {
-    final user = auth.currentUser!;
-    final canRespond = isCustomer && !payment.isReversed;
-    final canReverse = user.role == UserRole.owner && !payment.isReversed;
-    showModalBottomSheet(
-      context: context,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Payment receipt', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            PaymentReceipt(payment: payment),
-            const SizedBox(height: 16),
-            if (canRespond && !payment.isCustomerConfirmed && !payment.isDisputed)
-              FilledButton.icon(
-                icon: const Icon(Icons.check),
-                label: const Text('This is correct'),
-                onPressed: () {
-                  Navigator.pop(sheetContext);
-                  runPaymentAction(context, () => payments.confirm(payment, customerUser: user), success: 'Thanks — payment confirmed.');
-                },
-              ),
-            if (canRespond && !payment.isDisputed)
-              TextButton.icon(
-                icon: const Icon(Icons.report_outlined),
-                label: const Text('Report a problem'),
-                onPressed: () async {
-                  Navigator.pop(sheetContext);
-                  final note = await promptText(context, title: 'What is wrong?', label: 'e.g. I paid 7,000, not 5,000');
-                  if (note != null && context.mounted) {
-                    runPaymentAction(context, () => payments.dispute(payment, note, customerUser: user), success: 'Reported — the owner has been notified.');
-                  }
-                },
-              ),
-            if (canReverse)
-              OutlinedButton.icon(
-                icon: const Icon(Icons.undo),
-                label: const Text('Reverse payment'),
-                onPressed: () async {
-                  Navigator.pop(sheetContext);
-                  final reason = await promptText(
-                    context,
-                    title: payment.isSettled ? 'Reverse and refund ${formatNpr(payment.settledAmount!)}?' : 'Reverse this payment?',
-                    label: 'Reason (the customer will see it)',
-                  );
-                  if (reason != null && context.mounted) {
-                    runPaymentAction(context, () => payments.reverse(payment, reason, owner: user), success: 'Payment reversed.');
-                  }
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
+  void _openPayment(BuildContext context, CustomerPayment payment, bool isCustomer) => showPaymentSheet(context, payment, payments, auth);
 }
 
 class _LineTile extends StatelessWidget {

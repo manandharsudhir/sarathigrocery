@@ -377,3 +377,34 @@ describe('business reset', () => {
     await assertFails(deleteDoc(doc(d, 'sales/S1')), 'no profile left: no more deletes');
   });
 });
+
+describe('customers without the app', () => {
+  beforeEach(seedBusiness);
+
+  const newCustomer = (extra = {}) => ({ name: 'N', phone: '1', location: '', creditLimit: 0, outstandingBalance: 0, openingBalance: 0, defaultDiscountPercent: 0, hasAppLogin: false, ...extra });
+
+  test('sales staff add customers only without credit terms', async () => {
+    await assertSucceeds(setDoc(doc(db(EMPLOYEE), 'customers/N1'), newCustomer()));
+    await assertFails(setDoc(doc(db(EMPLOYEE), 'customers/N2'), newCustomer({ creditLimit: 50000 })));
+    await assertFails(setDoc(doc(db(EMPLOYEE), 'customers/N3'), newCustomer({ openingBalance: 9000, outstandingBalance: 9000 })));
+    await assertFails(setDoc(doc(db(DELIVERY), 'customers/N4'), newCustomer()));
+    await assertFails(setDoc(doc(db(CUSTOMER), 'customers/N5'), newCustomer()));
+  });
+
+  test('staff can take orders for customers; customers cannot pose as staff', async () => {
+    await assertSucceeds(setDoc(doc(db(EMPLOYEE), 'orders/P1'), { customerId: 'C2', status: 'placed', placedByStaffName: 'employee' }));
+    await assertFails(setDoc(doc(db(EMPLOYEE), 'orders/P2'), { customerId: 'nope', status: 'placed', placedByStaffName: 'employee' }));
+    await assertFails(setDoc(doc(db(CUSTOMER), 'orders/P3'), { customerId: 'C1', status: 'placed', placedByStaffName: 'employee' }));
+    await assertFails(setDoc(doc(db(DELIVERY), 'orders/P4'), { customerId: 'C1', status: 'placed', placedByStaffName: 'x' }));
+  });
+
+  test('phone confirmation: owner/accountant only, never the collector, once', async () => {
+    const confirm = (uid, at = 10) => updateDoc(doc(db(uid), 'customerPayments/PM2'), { phoneConfirmedAt: at, phoneConfirmedByName: 'x' });
+    await assertFails(confirm(ACCOUNTANT), 'PM2 was collected by the accountant');
+    await assertFails(confirm(EMPLOYEE), 'no reconcileCash');
+    await assertFails(confirm(DELIVERY));
+    await assertSucceeds(confirm(OWNER));
+    await assertFails(confirm(OWNER, 11), 'already confirmed');
+    await assertSucceeds(updateDoc(doc(db(ACCOUNTANT), 'customerPayments/PM1'), { disputedAt: 10, disputeNote: 'on call', disputedByName: 'acc (phone call)' }));
+  });
+});

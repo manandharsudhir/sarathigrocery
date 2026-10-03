@@ -11,6 +11,9 @@ void _mergePayment(CustomerPayment p, Json j) {
     ..customerConfirmedAt = fromMillisOrNull(j['customerConfirmedAt'])
     ..disputedAt = fromMillisOrNull(j['disputedAt'])
     ..disputeNote = j['disputeNote'] ?? ''
+    ..disputedByName = j['disputedByName'] ?? ''
+    ..phoneConfirmedAt = fromMillisOrNull(j['phoneConfirmedAt'])
+    ..phoneConfirmedByName = j['phoneConfirmedByName'] ?? ''
     ..settledAt = fromMillisOrNull(j['settledAt'])
     ..settledAmount = (j['settledAmount'] as num?)?.toDouble()
     ..settledById = j['settledById']
@@ -37,6 +40,11 @@ class PaymentRepositoryImpl implements PaymentRepository {
             'collectedById': p.collectedById,
             'collectedByName': p.collectedByName,
             'deliveryCode': p.deliveryCode,
+            'signature': p.signature,
+            'signedName': p.signedName,
+            'phoneConfirmedAt': _ms(p.phoneConfirmedAt),
+            'phoneConfirmedByName': p.phoneConfirmedByName,
+            'disputedByName': p.disputedByName,
             'customerConfirmedAt': _ms(p.customerConfirmedAt),
             'disputedAt': _ms(p.disputedAt),
             'disputeNote': p.disputeNote,
@@ -64,6 +72,8 @@ class PaymentRepositoryImpl implements PaymentRepository {
               collectedById: j['collectedById'] ?? '',
               collectedByName: j['collectedByName'] ?? '',
               deliveryCode: j['deliveryCode'],
+              signature: j['signature'],
+              signedName: j['signedName'] ?? '',
             );
             _mergePayment(p, j);
             return p;

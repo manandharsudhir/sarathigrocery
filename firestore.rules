@@ -37,12 +37,12 @@ service cloud.firestore {
           'manageInventory', 'adjustInventory', 'viewCustomers', 'manageCustomers', 'viewSuppliers',
           'manageSuppliers', 'recordPayments', 'manageExpenses', 'viewAccounting', 'viewReports',
           'manageProducts', 'changePrices', 'manageEmployees', 'managePermissions', 'manageSettings',
-          'deliverOrders', 'reconcileCash']
+          'deliverOrders', 'reconcileCash', 'createCustomers']
         : r == 'accountant' ? [
           'viewSales', 'createSales', 'viewPurchases', 'createPurchases', 'viewCustomers', 'manageCustomers',
           'viewSuppliers', 'manageSuppliers', 'recordPayments', 'manageExpenses', 'viewAccounting', 'viewReports',
-          'reconcileCash']
-        : r == 'employee' ? ['viewSales', 'createSales', 'viewCustomers', 'recordPayments', 'deliverOrders']
+          'reconcileCash', 'createCustomers']
+        : r == 'employee' ? ['viewSales', 'createSales', 'viewCustomers', 'recordPayments', 'deliverOrders', 'createCustomers']
         : r == 'delivery' ? ['deliverOrders']
         : [];
     }
@@ -144,7 +144,14 @@ service cloud.firestore {
 
     match /customers/{customerId} {
       allow read: if staff() || deliverer() || (customer() && customerId == myCustomerId());
-      allow create: if can('manageCustomers');
+      allow create: if can('manageCustomers')
+        // Sales staff may add customers, but without credit terms.
+        || (can('createCustomers')
+          && request.resource.data.creditLimit == 0
+          && request.resource.data.outstandingBalance == 0
+          && request.resource.data.get('openingBalance', 0) == 0
+          && request.resource.data.defaultDiscountPercent == 0
+          && request.resource.data.get('hasAppLogin', false) == false);
       allow update: if (can('manageCustomers') && !('openingBalance' in request.resource.data.diff(resource.data).affectedKeys()))
         // Credit sales, invoices, cancellations, returns and payments move the balance.
         || ((staff() || deliverer()) && changedOnly(['outstandingBalance', 'lastPaymentDate']));
@@ -207,14 +214,18 @@ service cloud.firestore {
       allow read: if staff()
         || (deliverer() && assignedToMe(resource.data))
         || (customer() && resource.data.customerId == myCustomerId());
-      allow create: if customer()
-        && request.resource.data.customerId == myCustomerId()
-        && request.resource.data.status == 'placed'
-        && request.resource.data.get('assignedToId', null) == null;
+      allow create: if request.resource.data.status == 'placed'
+        && request.resource.data.get('assignedToId', null) == null
+        && ((customer() && request.resource.data.customerId == myCustomerId()
+              && request.resource.data.get('placedByStaffName', '') == '')
+          // Staff take a phone/WhatsApp order for an existing customer.
+          || (can('createSales') && request.resource.data.placedByStaffName is string
+              && request.resource.data.placedByStaffName.size() > 0
+              && exists(/databases/$(database)/documents/customers/$(request.resource.data.customerId))));
       allow update: if resource.data.status in ['placed', 'confirmed', 'preparing', 'ready', 'outForDelivery'] && (
-        (staff() && changedOnly(['status', 'updatedDate', 'assignedToId', 'assignedToName']))
+        (staff() && changedOnly(['status', 'updatedDate', 'assignedToId', 'assignedToName', 'receivedSignature', 'receivedBy']))
         // The assigned deliverer only takes it out and delivers it.
-        || (deliverer() && assignedToMe(resource.data) && changedOnly(['status', 'updatedDate'])
+        || (deliverer() && assignedToMe(resource.data) && changedOnly(['status', 'updatedDate', 'receivedSignature', 'receivedBy'])
           && request.resource.data.status in ['outForDelivery', 'delivered']));
       allow delete: if isOwner(); // business reset only (Settings → Danger zone)
     }
@@ -261,6 +272,7 @@ service cloud.firestore {
       allow create: if request.resource.data.collectedById == request.auth.uid
         && request.resource.data.amount is number && request.resource.data.amount > 0
         && request.resource.data.customerConfirmedAt == null
+        && request.resource.data.get('phoneConfirmedAt', null) == null
         && request.resource.data.disputedAt == null
         && request.resource.data.reversedAt == null
         && (can('recordPayments') || (deliverer() && request.resource.data.orderId is string
@@ -292,7 +304,16 @@ service cloud.firestore {
         // ...or disputes once.
         || (customer() && resource.data.customerId == myCustomerId()
           && resource.data.disputedAt == null
-          && changedOnly(['disputedAt', 'disputeNote']))
+          && changedOnly(['disputedAt', 'disputeNote', 'disputedByName']))
+        // Customer without the app: owner/accountant (not the collector)
+        // phones them and records the answer.
+        || (can('reconcileCash') && resource.data.collectedById != request.auth.uid
+          && resource.data.customerConfirmedAt == null && resource.data.get('phoneConfirmedAt', null) == null
+          && resource.data.disputedAt == null && resource.data.deliveryCode == null && resource.data.get('signature', null) == null
+          && changedOnly(['phoneConfirmedAt', 'phoneConfirmedByName']))
+        || (can('reconcileCash') && resource.data.collectedById != request.auth.uid
+          && resource.data.disputedAt == null
+          && changedOnly(['disputedAt', 'disputeNote', 'disputedByName']))
         // Owner reverses (a settled one is refunded via the cash ledger).
         || (isOwner() && changedOnly(['reversedAt', 'reversedByName', 'reversalReason'])));
       allow delete: if isOwner(); // business reset only (Settings → Danger zone)

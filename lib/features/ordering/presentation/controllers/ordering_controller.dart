@@ -36,6 +36,7 @@ class OrderingController extends ChangeNotifier {
     this._recordPayment,
     this._payments,
     this._commit,
+    this._businessName,
   )   : _placeOrder = PlaceOrder(_repository, products, _audit, notifications),
         _advanceStatus = AdvanceOrderStatus(_repository, products, sales, customers, _audit, notifications, _users),
         _notifications = notifications;
@@ -48,6 +49,11 @@ class OrderingController extends ChangeNotifier {
   final AdvanceOrderStatus _advanceStatus;
   final RecordPayment _recordPayment;
   final PaymentRepository _payments;
+
+  final String Function() _businessName;
+
+  /// For shareable receipts.
+  String get businessName => _businessName();
 
   /// Waits for the backend to accept queued writes (throws if rejected;
   /// with requireOnline, also if the server can't be reached).
@@ -98,6 +104,20 @@ class OrderingController extends ChangeNotifier {
   CustomerOrder? placeOrder(Customer customer, {required DeliveryType deliveryType, String address = '', String notes = '', required String userName, String? userId}) {
     final order = _placeOrder(customer, deliveryType: deliveryType, address: address, notes: notes, userName: userName, userId: userId);
     if (order != null) _changed();
+    return order;
+  }
+
+  /// Staff take a phone/WhatsApp order for [customer] (who may have no app).
+  /// Replaces this device's cart with [items].
+  CustomerOrder? placeOrderFor(Customer customer, Map<Product, int> items, {required DeliveryType deliveryType, String address = '', String notes = '', required AppUser staff}) {
+    if (!staff.can(Permission.createSales)) throw PaymentException('You are not allowed to take orders.');
+    _repository.clearCart();
+    items.forEach((product, qty) {
+      if (qty > 0) _repository.addToCart(product, qty);
+    });
+    final order = _placeOrder(customer,
+        deliveryType: deliveryType, address: address, notes: notes, userName: staff.name, userId: _users.userForCustomer(customer.id)?.id, staffName: staff.name);
+    _changed();
     return order;
   }
 
@@ -174,6 +194,8 @@ class OrderingController extends ChangeNotifier {
     required PaymentMethod method,
     String reference = '',
     String? deliveryCode,
+    String? signature,
+    String signedName = '',
     required AppUser collector,
   }) async {
     if (order.status == OrderStatus.delivered || order.status == OrderStatus.cancelled) throw PaymentException('This order is already closed.');
@@ -182,6 +204,12 @@ class OrderingController extends ChangeNotifier {
       throw PaymentException('Enter the ${paymentMethodLabel(method)} reference so it can be verified.');
     }
     final code = amount > 0 ? (deliveryCode ?? '').trim() : '';
+    // A customer without the app can't confirm later, so the handover
+    // itself must be proven: their signature (or a code, if they have one).
+    if (!order.customer.hasAppLogin && signature == null) {
+      throw PaymentException('${order.customer.name} has no app — ask them to sign for the goods${amount > 0 ? ' and the payment' : ''}.');
+    }
+    if (signature != null && signedName.trim().isEmpty) throw PaymentException('Enter the name of the person who signed.');
 
     // The backend lets only the assigned deliverer check codes and invoice.
     // Owner/employee delivering an order themselves take it over first.
@@ -206,9 +234,11 @@ class OrderingController extends ChangeNotifier {
           'Ask the customer to check the code on the order in their app. If the order has no code (placed before codes existed), leave the code empty.');
     }
 
+    if (signature != null) _repository.recordReceipt(order, signature: signature, receivedBy: signedName.trim());
     _advanceStatus(order, OrderStatus.delivered, userName: collector.name, userId: collector.id);
     final payment = amount > 0
-        ? _recordPayment(order.customer, amount, method: method, reference: reference, order: order, deliveryCode: code.isEmpty ? null : code, collector: collector)
+        ? _recordPayment(order.customer, amount,
+            method: method, reference: reference, order: order, deliveryCode: code.isEmpty ? null : code, signature: signature, signedName: signedName, collector: collector)
         : null;
     _changed();
     await _commitOnline('The server refused this delivery. Nothing was recorded.', showDetail: true);

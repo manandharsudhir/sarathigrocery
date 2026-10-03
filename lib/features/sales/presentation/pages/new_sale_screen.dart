@@ -61,7 +61,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
           const SizedBox(height: 16),
           Text('Items', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          ...products.map((p) => _ProductRow(
+          ...products.map((p) => ProductQtyRow(
                 product: p,
                 qty: _cart[p] ?? 0,
                 onChanged: (qty) => setState(() {
@@ -158,8 +158,9 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   }
 }
 
-class _ProductRow extends StatelessWidget {
-  const _ProductRow({required this.product, required this.qty, required this.onChanged});
+/// Product with −/+ quantity stepper, limited to available stock.
+class ProductQtyRow extends StatelessWidget {
+  const ProductQtyRow({super.key, required this.product, required this.qty, required this.onChanged});
 
   final Product product;
   final int qty;

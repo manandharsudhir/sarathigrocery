@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarathigrocery/app/injection.dart';
 import 'package:sarathigrocery/core/data/remote_store.dart';
+import 'package:sarathigrocery/core/widgets/signature_pad.dart';
+import 'package:sarathigrocery/features/customers/presentation/pdf/payment_documents.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/auth_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/customer_order.dart';
@@ -371,10 +373,94 @@ void main() {
     });
   });
 
+  group('customers without the app', () {
+    String signature() => const Signature([
+          [Offset(10, 10), Offset(500, 400), Offset(900, 120)],
+        ]).encode();
+
+    test('sales staff can add a customer, but only with no credit', () async {
+      final business = await TestBusiness.create();
+      final employee = await business.device(UserRole.employee);
+      final c = employee.customers.createCustomer(name: 'Walk-in Traders', phone: '9877', location: 'Kalanki', creditLimit: 50000, openingBalance: 9000, by: employee.auth.currentUser!);
+      expect(c.creditLimit, 0);
+      expect(c.outstandingBalance, 0);
+      expect(c.hasAppLogin, isFalse);
+      await pumpEventQueue();
+      final owner = await business.device(UserRole.owner);
+      expect(owner.notificationRepository.notificationsFor(owner.auth.currentUser!).any((n) => n.title.contains('Walk-in Traders')), isTrue);
+      final customerDevice = await business.device(UserRole.customer);
+      expect(() => customerDevice.customers.createCustomer(name: 'x', phone: '1', location: '', by: customerDevice.auth.currentUser!), throwsStateError);
+    });
+
+    test('phone order → delivery with signature: no code needed, payment counts as confirmed', () async {
+      final business = await TestBusiness.create();
+      final employee = await business.device(UserRole.employee);
+      final shop = employee.customers.customers.firstWhere((c) => c.name == 'Thapa Trading'); // no login
+      final product = employee.inventory.products.first;
+      final order = employee.ordering.placeOrderFor(shop, {product: 2}, deliveryType: DeliveryType.delivery, address: 'Balkumari', staff: employee.auth.currentUser!)!;
+      expect(order.placedByStaffName, employee.auth.currentUser!.name);
+      await pumpEventQueue();
+
+      final owner = await business.device(UserRole.owner);
+      final o = owner.ordering.orders.single;
+      owner.ordering.assign(o, owner.ordering.deliverers.firstWhere((u) => u.role == UserRole.delivery), by: owner.auth.currentUser!);
+      for (final st in [OrderStatus.confirmed, OrderStatus.preparing, OrderStatus.ready, OrderStatus.outForDelivery]) {
+        owner.ordering.advanceOrderStatus(o, st, userName: 'Owner');
+      }
+      await pumpEventQueue();
+
+      final delivery = await business.device(UserRole.delivery);
+      final d = delivery.ordering.orders.single;
+      final me = delivery.auth.currentUser!;
+      await expectLater(delivery.ordering.deliverAndCollect(d, amount: 1000, method: PaymentMethod.cash, collector: me),
+          throwsA(isA<PaymentException>().having((e) => e.message, 'message', contains('sign'))));
+      final payment = await delivery.ordering.deliverAndCollect(d, amount: 1000, method: PaymentMethod.cash, signature: signature(), signedName: 'Ram Thapa', collector: me);
+      await pumpEventQueue();
+
+      expect(payment!.confirmedBySignature, isTrue);
+      expect(payment.isCustomerConfirmed, isTrue);
+      expect(d.receivedBy, 'Ram Thapa');
+      expect(Signature.decode(d.receivedSignature)!.strokes.single, hasLength(3));
+      expect(owner.payments.unconfirmed, isEmpty);
+    });
+
+    test('unsigned payment from a no-app customer: owner/accountant confirms by phone, never the collector', () async {
+      final business = await TestBusiness.create();
+      final employee = await business.device(UserRole.employee);
+      final accountant = await business.device(UserRole.accountant);
+      final shop = employee.customers.customers.firstWhere((c) => c.name == 'Thapa Trading');
+      final p1 = employee.payments.record(shop, 800, method: PaymentMethod.cash, collector: employee.auth.currentUser!);
+      employee.payments.record(shop, 900, method: PaymentMethod.cash, collector: employee.auth.currentUser!);
+      await pumpEventQueue();
+
+      expect(() => employee.payments.confirmByPhone(p1, staff: employee.auth.currentUser!), throwsA(isA<PaymentException>()));
+      final mine = accountant.payments.unconfirmed;
+      expect(mine, hasLength(2));
+      accountant.payments.confirmByPhone(mine.first, staff: accountant.auth.currentUser!);
+      accountant.payments.disputeOnBehalf(mine.last, 'Says he paid 90', staff: accountant.auth.currentUser!);
+      await pumpEventQueue();
+
+      expect(accountant.payments.unconfirmed, isEmpty);
+      expect(accountant.payments.disputed.single.disputedByName, contains('phone call'));
+      expect(mine.first.phoneConfirmedByName, accountant.auth.currentUser!.name);
+    });
+
+    test('receipts and statements render as PDF', () async {
+      final business = await TestBusiness.create();
+      final accountant = await business.device(UserRole.accountant);
+      final shop = accountant.customers.customers.first;
+      final payment = accountant.payments.record(shop, 1500, method: PaymentMethod.cash, signature: signature(), signedName: 'Hari', collector: accountant.auth.currentUser!);
+      final receipt = await paymentReceiptPdf(payment, businessName: 'Test Shop');
+      final statement = await statementPdf(shop, accountant.payments.statementFor(shop), businessName: 'Test Shop');
+      expect(String.fromCharCodes(receipt.take(5)), '%PDF-');
+      expect(String.fromCharCodes(statement.take(5)), '%PDF-');
+    });
+  });
+
   group('customer management', () {
     test('add and edit a customer; credit limit changes are audited', () async {
       final owner = await signedIn(UserRole.owner);
-      final customer = owner.customers.createCustomer(name: 'New Shop', phone: '9855555555', location: 'Patan', creditLimit: 10000, userName: 'Owner');
+      final customer = owner.customers.createCustomer(name: 'New Shop', phone: '9855555555', location: 'Patan', creditLimit: 10000, by: owner.auth.currentUser!);
       owner.customers.updateCustomer(customer, name: 'New Shop Pvt', phone: customer.phone, location: 'Patan', creditLimit: 15000, defaultDiscountPercent: 2, userName: 'Owner');
       await pumpEventQueue();
 
@@ -394,7 +480,7 @@ void paymentTests() {
   Future<({TestBusiness business, AppScope owner, AppScope accountant, AppScope delivery, AppScope customer, CustomerOrder order})> scenario() async {
     final business = await TestBusiness.create();
     final owner = await business.device(UserRole.owner);
-    final shop = owner.customers.createCustomer(name: 'Kathmandu Kirana', phone: '9866666666', location: 'Patan', creditLimit: 20000, openingBalance: 5000, userName: 'Owner');
+    final shop = owner.customers.createCustomer(name: 'Kathmandu Kirana', phone: '9866666666', location: 'Patan', creditLimit: 20000, openingBalance: 5000, by: owner.auth.currentUser!);
     expect(await owner.customers.createLogin(shop, phone: '9866666666', password: TestBusiness.password, userName: 'Owner'), isNull);
     owner.inventory.createProduct(name: 'Ghee 5L', category: 'Oil', unitPrice: 5000, stockQty: 10, reorderLevel: 1);
     await pumpEventQueue();

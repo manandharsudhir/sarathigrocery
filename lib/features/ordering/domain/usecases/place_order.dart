@@ -32,7 +32,11 @@ class PlaceOrder {
           .where((o) => o.customer.id == customer.id && o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled)
           .fold(0.0, (sum, o) => sum + o.total);
 
-  CustomerOrder? call(Customer customer, {required DeliveryType deliveryType, String address = '', String notes = '', required String userName, String? userId}) {
+  /// [staffName]: staff placing it for the customer (phone/WhatsApp order).
+  /// Then no delivery code is issued — the staff member would know it — and
+  /// the customer confirms by app, signature or phone call instead.
+  /// [userId] is always the customer's own login (for their notifications).
+  CustomerOrder? call(Customer customer, {required DeliveryType deliveryType, String address = '', String notes = '', required String userName, String? userId, String? staffName}) {
     if (_orders.cart.isEmpty) return null;
 
     final subtotal = _orders.cart.fold(0.0, (sum, i) => sum + i.lineTotal);
@@ -48,8 +52,9 @@ class PlaceOrder {
       notes: notes,
       placedByUserId: userId,
       overCreditLimit: overLimit,
+      placedByStaffName: staffName ?? '',
     );
-    _orders.saveDeliveryCode(order, _codeRandom.nextInt(1000000).toString().padLeft(6, '0'));
+    if (staffName == null) _orders.saveDeliveryCode(order, _codeRandom.nextInt(1000000).toString().padLeft(6, '0'));
 
     for (final item in order.items) {
       _products.reserveStock(item.product, item.qty);
@@ -57,9 +62,10 @@ class PlaceOrder {
     _orders.clearCart();
 
     _audit.record(userName, 'Order placed', 'Order', entityId: order.id, newValue: order.total.toStringAsFixed(0));
+    final by = staffName == null ? customer.name : '$staffName for ${customer.name}';
     final note = overLimit ? ' — over credit limit, needs approval' : '';
-    _notifications.notify('New order', 'Order ${order.id} placed by ${customer.name}$note', role: UserRole.owner);
-    _notifications.notify('New order', 'Order ${order.id} placed by ${customer.name}$note', role: UserRole.employee);
+    _notifications.notify('New order', 'Order ${order.id} placed by $by$note', role: UserRole.owner);
+    _notifications.notify('New order', 'Order ${order.id} placed by $by$note', role: UserRole.employee);
 
     return order;
   }

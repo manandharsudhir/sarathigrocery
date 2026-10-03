@@ -11,6 +11,7 @@ class Customer {
     this.lastPaymentDate,
     this.defaultDiscountPercent = 0,
     this.openingBalance,
+    this.hasAppLogin = false,
   });
 
   final String id;
@@ -27,6 +28,11 @@ class Customer {
   /// Lets the statement prove `outstandingBalance` = opening + bills −
   /// payments, so an unexplained change to a balance is visible.
   final double? openingBalance;
+
+  /// Whether this customer has their own app login. Without one they can't
+  /// see delivery codes or confirm payments in the app, so deliveries need
+  /// their signature and payments are confirmed by a phone call instead.
+  bool hasAppLogin;
 
   CreditStatus get creditStatus {
     if (outstandingBalance > creditLimit) return CreditStatus.overdue;

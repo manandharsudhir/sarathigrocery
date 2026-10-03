@@ -75,7 +75,7 @@ void main() {
     }
     final gurung = owner.customers.customers.firstWhere((c) => c.name == 'Gurung General Store');
     expect(await owner.customers.createLogin(gurung, phone: '9800000004', password: _password, userName: o.name), isNull);
-    final newShop = owner.customers.createCustomer(name: 'New Shop', phone: '9811', location: 'Patan', creditLimit: 20000, openingBalance: 5000, userName: o.name);
+    final newShop = owner.customers.createCustomer(name: 'New Shop', phone: '9811', location: 'Patan', creditLimit: 20000, openingBalance: 5000, by: o);
     owner.customers.updateCustomer(newShop, name: 'New Shop Pvt', phone: '9811', location: 'Patan', creditLimit: 25000, defaultDiscountPercent: 2, userName: o.name);
     owner.inventory.addCategory('Dairy');
     final ghee = owner.inventory.createProduct(name: 'Ghee', category: 'Dairy', unitPrice: 5000, purchasePrice: 4200, stockQty: 20, reorderLevel: 2);
@@ -149,6 +149,34 @@ void main() {
     await pumpEventQueue();
     await owner.ordering.deliverAndCollect(oSecond, amount: 1000, method: PaymentMethod.wallet, reference: 'KHALTI-9',
         deliveryCode: customer.ordering.deliveryCodeFor(customer.ordering.orders.firstWhere((x) => x.id == second.id)), collector: o);
+    await pumpEventQueue();
+
+    // Customers without the app: sales staff add one and take a phone order;
+    // delivery with signature; phone confirmation and dispute of counter payments.
+    final walkIn = employee.customers.createCustomer(name: 'No App Traders', phone: '9888', location: 'Kalanki', by: e);
+    await pumpEventQueue();
+    final phoneOrder = employee.ordering.placeOrderFor(
+        employee.customers.customers.firstWhere((c) => c.id == walkIn.id), {employee.inventory.products.firstWhere((p) => p.name == 'Ghee'): 1},
+        deliveryType: DeliveryType.delivery, address: 'Kalanki', staff: e)!;
+    await pumpEventQueue();
+    final oPhone = owner.ordering.orders.firstWhere((x) => x.id == phoneOrder.id);
+    owner.ordering.assign(oPhone, owner.ordering.deliverers.firstWhere((u) => u.role == UserRole.delivery), by: o);
+    for (final st in [OrderStatus.confirmed, OrderStatus.preparing, OrderStatus.ready]) {
+      owner.ordering.advanceOrderStatus(oPhone, st, userName: o.name, userId: o.id);
+    }
+    await pumpEventQueue();
+    final dPhone = delivery.ordering.orders.firstWhere((x) => x.id == phoneOrder.id);
+    delivery.ordering.advanceOrderStatus(dPhone, OrderStatus.outForDelivery, userName: d.name, userId: d.id);
+    await pumpEventQueue();
+    const signature = '10,10 500,400 900,120';
+    await delivery.ordering.deliverAndCollect(dPhone, amount: 2000, method: PaymentMethod.cash, signature: signature, signedName: 'Shyam', collector: d);
+    final eWalkIn = employee.customers.customers.firstWhere((c) => c.id == walkIn.id);
+    employee.payments.record(eWalkIn, 400, method: PaymentMethod.cash, collector: e);
+    employee.payments.record(eWalkIn, 600, method: PaymentMethod.cash, collector: e);
+    await pumpEventQueue();
+    final toCall = accountant.payments.unconfirmed.where((p) => p.customer.id == walkIn.id).toList();
+    accountant.payments.confirmByPhone(toCall.firstWhere((p) => p.amount == 400), staff: a);
+    accountant.payments.disputeOnBehalf(toCall.firstWhere((p) => p.amount == 600), 'paid 60', staff: a);
     await pumpEventQueue();
 
     // Staff admin, notifications.

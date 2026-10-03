@@ -16,7 +16,12 @@ import 'package:sarathigrocery/features/sales/domain/repositories/sale_repositor
 /// handover to the till, owner reversal, and statements. Actions throw
 /// [PaymentException] with a displayable message.
 class PaymentsController extends ChangeNotifier {
-  PaymentsController(this._payments, this._sales, this._record, this._settle, this._respond, this._reverse);
+  PaymentsController(this._payments, this._sales, this._record, this._settle, this._respond, this._reverse, this._businessName);
+
+  /// For receipt/statement headers.
+  final String Function() _businessName;
+
+  String get businessName => _businessName();
 
   final PaymentRepository _payments;
   final SaleRepository _sales;
@@ -50,8 +55,8 @@ class PaymentsController extends ChangeNotifier {
     AppSignal.instance.ping();
   }
 
-  CustomerPayment record(Customer customer, double amount, {required PaymentMethod method, String reference = '', required AppUser collector}) {
-    final payment = _record(customer, amount, method: method, reference: reference, collector: collector);
+  CustomerPayment record(Customer customer, double amount, {required PaymentMethod method, String reference = '', String? signature, String signedName = '', required AppUser collector}) {
+    final payment = _record(customer, amount, method: method, reference: reference, signature: signature, signedName: signedName, collector: collector);
     _changed();
     return payment;
   }
@@ -68,6 +73,16 @@ class PaymentsController extends ChangeNotifier {
 
   void dispute(CustomerPayment payment, String note, {required AppUser customerUser}) {
     _respond.dispute(payment, note, customerUser: customerUser);
+    _changed();
+  }
+
+  void confirmByPhone(CustomerPayment payment, {required AppUser staff}) {
+    _respond.confirmByPhone(payment, staff: staff);
+    _changed();
+  }
+
+  void disputeOnBehalf(CustomerPayment payment, String note, {required AppUser staff}) {
+    _respond.disputeOnBehalf(payment, note, staff: staff);
     _changed();
   }
 

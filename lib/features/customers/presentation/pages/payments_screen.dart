@@ -5,6 +5,7 @@ import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/payments_controller.dart';
+import 'package:sarathigrocery/features/customers/presentation/widgets/payment_sheet.dart';
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_widgets.dart';
 
 /// Owner/accountant view of customer payments: cash to receive from
@@ -26,7 +27,13 @@ class PaymentsScreen extends StatelessWidget {
         for (final p in pending) {
           (byCollector[p.collectedByName] ??= []).add(p);
         }
-        final issues = [...payments.disputed, ...payments.shortfalls, ...payments.unconfirmed.where((p) => DateTime.now().difference(p.date).inHours >= 24)];
+        // Customers without the app can never confirm themselves: they need a
+        // call right away. App users get 24 hours to confirm on their own.
+        final issues = [
+          ...payments.disputed,
+          ...payments.shortfalls,
+          ...payments.unconfirmed.where((p) => !p.customer.hasAppLogin || DateTime.now().difference(p.date).inHours >= 24),
+        ];
         return DefaultTabController(
           length: 3,
           initialIndex: initialTab,
@@ -102,6 +109,8 @@ class _PaymentTile extends StatelessWidget {
           Text('${paymentMethodLabel(payment.method)}${payment.reference.isEmpty ? '' : ' ${payment.reference}'} · ${payment.collectedByName} · ${formatDate(payment.date)}'
               '${payment.orderId == null ? '' : ' · order ${payment.orderId}'}'),
           if (payment.isDisputed) Text('"${payment.disputeNote}"', style: const TextStyle(color: Colors.red)),
+          if (!payment.isCustomerConfirmed && !payment.isDisputed && !payment.isReversed && !payment.customer.hasAppLogin)
+            const Text('No app — tap to confirm by phone call', style: TextStyle(color: Colors.orange)),
           const SizedBox(height: 4),
           PaymentStatusRow(payment: payment),
         ],
@@ -109,7 +118,7 @@ class _PaymentTile extends StatelessWidget {
       trailing: showReceive && auth.can(Permission.reconcileCash)
           ? FilledButton.tonal(onPressed: () => _receive(context), child: const Text('Receive'))
           : null,
-      onTap: () => showModalBottomSheet(context: context, builder: (_) => Padding(padding: const EdgeInsets.all(16), child: PaymentReceipt(payment: payment))),
+      onTap: () => showPaymentSheet(context, payment, payments, auth),
     );
   }
 }

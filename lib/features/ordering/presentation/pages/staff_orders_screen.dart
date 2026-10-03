@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
+import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
+import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
 import 'package:sarathigrocery/features/ordering/presentation/pages/order_detail_screen.dart';
+import 'package:sarathigrocery/features/ordering/presentation/pages/staff_new_order_screen.dart';
 
 class StaffOrdersScreen extends StatefulWidget {
-  const StaffOrdersScreen({super.key, required this.controller, required this.auth});
+  const StaffOrdersScreen({super.key, required this.controller, required this.auth, this.customers, this.inventory});
 
   final OrderingController controller;
   final AuthController auth;
+
+  /// Given where staff may take orders for customers (the "New Order" button).
+  final CustomersController? customers;
+  final InventoryController? inventory;
 
   @override
   State<StaffOrdersScreen> createState() => _StaffOrdersScreenState();
@@ -33,6 +41,19 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
 
         return Scaffold(
           appBar: AppBar(title: const Text('Orders')),
+          floatingActionButton: widget.customers != null && widget.inventory != null && widget.auth.can(Permission.createSales)
+              ? FloatingActionButton.extended(
+                  heroTag: null,
+                  icon: const Icon(Icons.add_call),
+                  label: const Text('New Order'),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => StaffNewOrderScreen(ordering: widget.controller, customers: widget.customers!, inventory: widget.inventory!, auth: widget.auth),
+                    ),
+                  ),
+                )
+              : null,
           body: Column(
             children: [
               SizedBox(

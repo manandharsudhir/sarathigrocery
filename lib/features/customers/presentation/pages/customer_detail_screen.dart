@@ -74,7 +74,7 @@ class CustomerDetailScreen extends StatelessWidget {
                 value: customer.lastPaymentDate == null ? 'Never' : formatDaysAgo(customer.lastPaymentDate!),
               ),
               if (customer.defaultDiscountPercent > 0) _InfoRow(label: 'Default Discount', value: '${customer.defaultDiscountPercent}%'),
-              _InfoRow(label: 'App Login', value: login == null ? 'None' : '${login.phone}${login.active ? '' : ' (deactivated)'}'),
+              _InfoRow(label: 'App Login', value: login == null ? (customer.hasAppLogin ? 'Yes' : 'None — signs for deliveries, confirmed by phone') : '${login.phone}${login.active ? '' : ' (deactivated)'}'),
               const SizedBox(height: 24),
               FilledButton.icon(
                 onPressed: customer.outstandingBalance <= 0 ? null : () => showCollectPaymentSheet(context, customer, controller, auth),
@@ -110,9 +110,10 @@ void showCollectPaymentSheet(BuildContext context, Customer customer, CustomersC
     builder: (_) => CollectPaymentForm(
       customer: customer,
       submitLabel: 'Record Payment',
-      onSubmit: (amount, method, reference, _) async {
-        final payment = controller.payments.record(customer, amount, method: method, reference: reference, collector: auth.currentUser!);
-        return payment.isSettled ? 'Payment recorded.' : 'Payment recorded — hand the ${method == PaymentMethod.cash ? 'cash' : 'reference'} to the owner/accountant.';
+      onSubmit: (input) async {
+        final payment = controller.payments.record(customer, input.amount,
+            method: input.method, reference: input.reference, signature: input.signature, signedName: input.signedName, collector: auth.currentUser!);
+        return payment.isSettled ? 'Payment recorded.' : 'Payment recorded — hand the ${input.method == PaymentMethod.cash ? 'cash' : 'reference'} to the owner/accountant.';
       },
     ),
   );

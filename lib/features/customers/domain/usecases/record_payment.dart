@@ -35,6 +35,8 @@ class RecordPayment {
     String reference = '',
     CustomerOrder? order,
     String? deliveryCode,
+    String? signature,
+    String signedName = '',
     required AppUser collector,
   }) {
     if (amount <= 0) throw PaymentException('Enter an amount greater than zero.');
@@ -68,11 +70,13 @@ class RecordPayment {
       collectedById: collector.id,
       collectedByName: collector.name,
       deliveryCode: code == null || code.isEmpty ? null : code,
+      signature: signature,
+      signedName: signedName.trim(),
     );
     _payments.add(payment);
 
     _audit.record(collector.name, 'Payment recorded', 'Customer', entityId: customer.id,
-        newValue: '${formatNpr(amount)} ${method.name}${order == null ? '' : ' for order ${order.id}'}${payment.confirmedByCode ? ' (code verified)' : ''}');
+        newValue: '${formatNpr(amount)} ${method.name}${order == null ? '' : ' for order ${order.id}'}${payment.confirmedByCode ? ' (code verified)' : ''}${payment.confirmedBySignature ? ' (signed)' : ''}');
 
     final customerUserId = order?.placedByUserId ?? _users.userForCustomer(customer.id)?.id;
     if (customerUserId != null) {
@@ -80,7 +84,7 @@ class RecordPayment {
         'Receipt: ${formatNpr(amount)} received',
         '${order == null ? '' : '${formatNpr(appliedToOrder)} for order ${order.id}, '}'
             '${formatNpr(payment.appliedToPreviousBalance)} toward earlier balance. Balance now ${formatNpr(payment.balanceAfter)}.'
-            '${payment.confirmedByCode ? '' : ' Please confirm or report a problem in My Account.'}',
+            '${payment.isCustomerConfirmed ? '' : ' Please confirm or report a problem in My Account.'}',
         userId: customerUserId,
       );
     }

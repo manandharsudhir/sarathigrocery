@@ -29,7 +29,11 @@ abstract class OrderRepository {
     required String notes,
     String? placedByUserId,
     bool overCreditLimit,
+    String placedByStaffName,
   });
+
+  /// The customer's signature on receiving the goods.
+  void recordReceipt(CustomerOrder order, {required String signature, required String receivedBy});
 
   /// The code the customer reads out at delivery. Only the customer's own
   /// device can see it (null elsewhere).

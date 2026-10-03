@@ -24,7 +24,7 @@ class CustomersScreen extends StatelessWidget {
       listenable: controller,
       builder: (context, _) => Scaffold(
         appBar: AppBar(title: const Text('Customers & Udharo')),
-        floatingActionButton: auth.can(Permission.manageCustomers)
+        floatingActionButton: auth.can(Permission.manageCustomers) || auth.can(Permission.createCustomers)
             ? FloatingActionButton.extended(heroTag: null, 
                 onPressed: () =>
                     showCustomerFormSheet(context, controller, auth),

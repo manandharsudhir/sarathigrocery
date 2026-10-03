@@ -33,7 +33,7 @@ Production Flutter app on Firebase (Firestore + Firebase Auth + Crashlytics), bu
 
 **Password reset.** A user verifies their phone once (Account screen, or the banner in `AppShell`), which links a Firebase phone credential to their login. After that, "Forgot password" sends an OTP, and the OTP sign-in lands in the same account, which then sets a new password. OTP reset is refused for unverified phones (their phone-only account is deleted immediately). Phones are local numbers; `FirebaseAuthRepository._countryCode` is `+977`.
 
-**Enforcement.** `firestore.rules` enforces roles/permissions server-side and mirrors `Permission` defaults plus per-user overrides. Staff read the whole business; every write needs the permission the UI checks. Customers read the catalogue plus their own profile/account/orders/notifications, and can only place orders. Ledgers and the audit log are append-only. The UI's `auth.can(...)` checks are UX only; the rules are the real gate. Tests: `firestore_tests/` (34 cases plus the replay of real app writes, emulator).
+**Enforcement.** `firestore.rules` enforces roles/permissions server-side and mirrors `Permission` defaults plus per-user overrides. Staff read the whole business; every write needs the permission the UI checks. Customers read the catalogue plus their own profile/account/orders/notifications, and can only place orders. Ledgers and the audit log are append-only. The UI's `auth.can(...)` checks are UX only; the rules are the real gate. Tests: `firestore_tests/` (37 cases plus the replay of real app writes, emulator).
 
 **Monitoring.** `reportError` (`lib/core/services/error_reporter.dart`) is set to Crashlytics in `main.dart` (not on web). Uncaught Flutter/platform errors are recorded as fatal. Collection is off in debug builds.
 
@@ -60,6 +60,12 @@ Money only moves through records that can't be edited; balances are backed by th
 - **Business reset** (Settings → Danger zone, owner only): the owner must type the business name and re-enter their password (`AuthRepository.verifyPassword`), and it runs online-only. `wipeBackend` in `AppScope` lists every collection via `RemoteStore.listIds`, deletes all of it, and deletes the owner's profile + `meta/setup` in the final commit. Delivery codes are deleted by order id because the owner can't read them. The rules give the owner `delete` on every collection solely for this. Logins (Firebase Auth) survive; `SetUpBusiness` reuses an existing login for the phone when the password matches. When adding a collection, it's covered automatically if it's in `AppScope`'s `collections`; add an owner `allow delete` rule for it.
 - **Audit entries** carry `userId`, which the rules require to equal the signed-in account.
 - **Roles:** `UserRole.delivery` has `deliverOrders` only. It sees customers and its assigned orders/collections (`DeliveriesScreen`, `MyCollectionsScreen`). Owner and employee also have `deliverOrders`. `reconcileCash`: owner, accountant. `PlaceOrder` flags `overCreditLimit` (balance + open orders + this order > limit).
+- **Customers without the app** (`Customer.hasAppLogin` false, set true by `CreateCustomerLogin`):
+  - Staff take phone/WhatsApp orders (`placeOrderFor`, Orders → New Order). No delivery code is issued, since the staff member would know it.
+  - Deliver & Collect requires the customer's **signature** (`core/widgets/signature_pad.dart`: normalized strokes, encoded inline on the order as `receivedSignature` and on the payment). A signed payment counts as customer-confirmed.
+  - Unsigned payments go straight to Issues. Owner/accountant (never the collector) phone the customer and record `confirmByPhone` or `disputeOnBehalf`.
+  - Receipts and statements share as PDF (`customers/presentation/pdf/payment_documents.dart`, packages `pdf` + `share_plus`).
+- **Sales staff create customers** (`Permission.createCustomers`: owner, accountant, employee). Without `manageCustomers`, the credit limit, opening balance and discount are forced to 0 (the rules check this too) and the owner is notified.
 - `FirestoreRemoteStore.commit` coalesces multiple writes to one document into one write, because rules judge each write separately (e.g. create payment + settle it).
 
 ## Backend seam
@@ -161,7 +167,7 @@ Conventions to preserve when touching these:
 
 - Currency: NPR, formatted via `formatNpr()` in `lib/core/utils/formatters.dart` (Nepali/Indian digit grouping — last 3 digits, then pairs: `NPR 2,50,000`). Don't use `intl` for this; the grouping style isn't what `intl`'s standard formatters produce.
 - Ids: use `nextId('X')` from `lib/core/utils/id_generator.dart` for any new entity. It's time-ordered + random so ids from different devices don't collide, and collections are ordered by id (oldest first).
-- No new dependencies beyond what's in `pubspec.yaml` (`cupertino_icons`, `flutter_lints`, `firebase_core`, `cloud_firestore`, `firebase_auth`, `firebase_crashlytics`) without asking first — state management, navigation, and formatting are all handled with stdlib/Flutter built-ins (`ChangeNotifier`, `ListenableBuilder`, `Navigator`) on purpose.
+- No new dependencies beyond what's in `pubspec.yaml` (`cupertino_icons`, `flutter_lints`, `firebase_core`, `cloud_firestore`, `firebase_auth`, `firebase_crashlytics`, `pdf`, `share_plus`) without asking first — state management, navigation, and formatting are all handled with stdlib/Flutter built-ins (`ChangeNotifier`, `ListenableBuilder`, `Navigator`) on purpose.
 
 ## What NOT to do
 
@@ -170,3 +176,17 @@ Conventions to preserve when touching these:
 - Do not import Firebase outside `FirestoreRemoteStore`, `FirebaseAuthRepository`, and `main.dart`.
 - Do not store credentials in Firestore / `AppUser`.
 - Do not add a DI framework (get_it, riverpod, etc.) to replace `AppScope` without asking.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as local markdown files under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.

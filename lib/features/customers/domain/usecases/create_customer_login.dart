@@ -4,13 +4,15 @@ import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/auth_repository.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/user_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
+import 'package:sarathigrocery/features/customers/domain/repositories/customer_repository.dart';
 
 /// Gives a business customer their own app login (to browse and order),
 /// linked to their [Customer] record. Returns an error message, or null.
 class CreateCustomerLogin {
-  CreateCustomerLogin(this._users, this._auth, this._audit);
+  CreateCustomerLogin(this._users, this._customers, this._auth, this._audit);
 
   final UserRepository _users;
+  final CustomerRepository _customers;
   final AuthRepository _auth;
   final AuditRepository _audit;
 
@@ -22,6 +24,8 @@ class CreateCustomerLogin {
     final id = await _auth.createAccount(phone, password);
     if (id == null) return 'Phone number $phone is already registered.';
     _users.add(AppUser(id: id, name: customer.name, phone: phone, role: UserRole.customer, linkedCustomerId: customer.id));
+    customer.hasAppLogin = true;
+    _customers.update(customer);
     _audit.record(userName, 'Customer login created', 'Customer', entityId: customer.id, newValue: phone);
     return null;
   }

@@ -23,6 +23,10 @@ enum Permission {
   managePermissions,
   manageSettings,
 
+  /// Add new customers (credit limit starts at 0 until someone with
+  /// manageCustomers sets it). Sales staff have this.
+  createCustomers,
+
   /// Be assigned orders, mark them out-for-delivery/delivered, and record
   /// what the customer paid at the door.
   deliverOrders,
@@ -57,6 +61,7 @@ const Map<UserRole, Set<Permission>> defaultRolePermissions = {
     Permission.manageSettings,
     Permission.deliverOrders,
     Permission.reconcileCash,
+    Permission.createCustomers,
   },
   UserRole.accountant: {
     Permission.viewSales,
@@ -72,6 +77,7 @@ const Map<UserRole, Set<Permission>> defaultRolePermissions = {
     Permission.viewAccounting,
     Permission.viewReports,
     Permission.reconcileCash,
+    Permission.createCustomers,
   },
   UserRole.employee: {
     Permission.viewSales,
@@ -79,6 +85,7 @@ const Map<UserRole, Set<Permission>> defaultRolePermissions = {
     Permission.viewCustomers,
     Permission.recordPayments,
     Permission.deliverOrders,
+    Permission.createCustomers,
   },
   UserRole.delivery: {
     Permission.deliverOrders,

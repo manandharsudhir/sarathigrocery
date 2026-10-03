@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/core/widgets/signature_pad.dart';
 import 'package:sarathigrocery/core/widgets/status_badge.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
@@ -22,11 +23,20 @@ void showDeliverSheet(BuildContext context, CustomerOrder order, OrderingControl
       submitLabel: 'Deliver & Collect',
       orderTotal: order.total,
       orderAlreadyPaid: ordering.paidFor(order),
-      askForCode: true,
+      // Staff-placed orders have no code (the staff member would know it).
+      askForCode: order.customer.hasAppLogin && order.placedByStaffName.isEmpty,
       allowZero: true,
-      onSubmit: (amount, method, reference, code) async {
-        await ordering.deliverAndCollect(order, amount: amount, method: method, reference: reference, deliveryCode: code, collector: auth.currentUser!);
-        return amount == 0 ? 'Delivered on credit.' : 'Delivered — ${formatNpr(amount)} recorded.';
+      signatureRequired: !order.customer.hasAppLogin,
+      onSubmit: (input) async {
+        await ordering.deliverAndCollect(order,
+            amount: input.amount,
+            method: input.method,
+            reference: input.reference,
+            deliveryCode: input.code,
+            signature: input.signature,
+            signedName: input.signedName,
+            collector: auth.currentUser!);
+        return input.amount == 0 ? 'Delivered on credit.' : 'Delivered — ${formatNpr(input.amount)} recorded.';
       },
     ),
   );
@@ -96,10 +106,16 @@ class OrderDetailScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)), Text(formatNpr(order.total), style: const TextStyle(fontWeight: FontWeight.bold))],
               ),
+              if (Signature.decode(order.receivedSignature) case final signature?) ...[
+                const SizedBox(height: 16),
+                Text('Received by ${order.receivedBy}', style: Theme.of(context).textTheme.titleSmall),
+                SignatureView(signature: signature),
+              ],
+              if (order.placedByStaffName.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text('Order taken by ${order.placedByStaffName}')),
               if (payments.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 Text('Payments at delivery', style: Theme.of(context).textTheme.titleMedium),
-                for (final p in payments) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: PaymentReceipt(payment: p)),
+                for (final p in payments) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: PaymentReceipt(payment: p, businessName: controller.businessName)),
               ],
               const SizedBox(height: 24),
               if (viewer == _Viewer.staff && open) _StaffActions(order: order, controller: controller, auth: auth),
