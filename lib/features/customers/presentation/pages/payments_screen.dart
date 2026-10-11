@@ -8,7 +8,7 @@ import 'package:sarathigrocery/features/customers/presentation/controllers/payme
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_sheet.dart';
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_widgets.dart';
 
-/// Owner/accountant view of customer payments: cash to receive from
+/// Owner/cash staff view of customer payments: cash to receive from
 /// collectors, problems (disputes, unconfirmed, shortfalls), and history.
 class PaymentsScreen extends StatelessWidget {
   const PaymentsScreen({super.key, required this.payments, required this.auth, this.initialTab = 0});
@@ -27,12 +27,11 @@ class PaymentsScreen extends StatelessWidget {
         for (final p in pending) {
           (byCollector[p.collectedByName] ??= []).add(p);
         }
-        // Customers without the app can never confirm themselves: they need a
-        // call right away. App users get 24 hours to confirm on their own.
+        // Unsigned payments need a phone call to confirm them.
         final issues = [
           ...payments.disputed,
           ...payments.shortfalls,
-          ...payments.unconfirmed.where((p) => !p.customer.hasAppLogin || DateTime.now().difference(p.date).inHours >= 24),
+          ...payments.unconfirmed,
         ];
         return DefaultTabController(
           length: 3,
@@ -41,14 +40,14 @@ class PaymentsScreen extends StatelessWidget {
             appBar: AppBar(
               title: const Text('Customer Payments'),
               bottom: TabBar(tabs: [
-                Tab(text: 'To receive (${pending.length})'),
+                Tab(text: 'To count in (${pending.length})'),
                 Tab(text: 'Issues (${issues.length})'),
                 const Tab(text: 'All'),
               ]),
             ),
             body: TabBarView(children: [
               byCollector.isEmpty
-                  ? const Center(child: Text('Nothing waiting — all collections are in the till.'))
+                  ? const Center(child: Text('Nothing waiting — all collected cash is with the shop.'))
                   : ListView(
                       padding: const EdgeInsets.all(16),
                       children: [
@@ -60,7 +59,7 @@ class PaymentsScreen extends StatelessWidget {
                       ],
                     ),
               issues.isEmpty
-                  ? const Center(child: Text('No disputes, shortfalls or long-unconfirmed payments.'))
+                  ? const Center(child: Text('No disputes, missing cash or unconfirmed payments.'))
                   : ListView(padding: const EdgeInsets.all(16), children: [for (final p in issues.toSet()) _PaymentTile(payment: p, payments: payments, auth: auth)]),
               ListView(padding: const EdgeInsets.all(16), children: [for (final p in payments.payments.reversed) _PaymentTile(payment: p, payments: payments, auth: auth)]),
             ]),
@@ -94,7 +93,7 @@ class _PaymentTile extends StatelessWidget {
     runPaymentAction(
       context,
       () => payments.settle(payment, value, receiver: auth.currentUser!),
-      success: value < payment.amount ? 'Recorded — shortfall of ${formatNpr(payment.amount - value)} flagged.' : 'Received.',
+      success: value < payment.amount ? 'Recorded — cash missing: ${formatNpr(payment.amount - value)} flagged.' : 'Cash counted in.',
     );
   }
 
@@ -109,14 +108,14 @@ class _PaymentTile extends StatelessWidget {
           Text('${paymentMethodLabel(payment.method)}${payment.reference.isEmpty ? '' : ' ${payment.reference}'} · ${payment.collectedByName} · ${formatDate(payment.date)}'
               '${payment.orderId == null ? '' : ' · order ${payment.orderId}'}'),
           if (payment.isDisputed) Text('"${payment.disputeNote}"', style: const TextStyle(color: Colors.red)),
-          if (!payment.isCustomerConfirmed && !payment.isDisputed && !payment.isReversed && !payment.customer.hasAppLogin)
-            const Text('No app — tap to confirm by phone call', style: TextStyle(color: Colors.orange)),
+          if (!payment.isCustomerConfirmed && !payment.isDisputed && !payment.isReversed)
+            const Text('Not signed — tap to confirm by phone call', style: TextStyle(color: Colors.orange)),
           const SizedBox(height: 4),
           PaymentStatusRow(payment: payment),
         ],
       ),
       trailing: showReceive && auth.can(Permission.reconcileCash)
-          ? FilledButton.tonal(onPressed: () => _receive(context), child: const Text('Receive'))
+          ? FilledButton.tonal(onPressed: () => _receive(context), child: const Text('Count cash in'))
           : null,
       onTap: () => showPaymentSheet(context, payment, payments, auth),
     );

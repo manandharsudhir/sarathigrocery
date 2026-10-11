@@ -3,14 +3,13 @@ import 'package:sarathigrocery/core/utils/id_generator.dart';
 import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
 import 'package:sarathigrocery/features/cash/domain/entities/cash_ledger_entry.dart';
 import 'package:sarathigrocery/features/cash/domain/entities/expense.dart';
-import 'package:sarathigrocery/features/cash/domain/entities/partner_ledger_entry.dart';
 import 'package:sarathigrocery/features/cash/domain/repositories/cash_repository.dart';
 
 class CashRepositoryImpl implements CashRepository {
   final _ledger = SyncedCollection<CashLedgerEntry>(
     'cashLedger',
     idOf: (e) => e.id,
-    toJson: (e) => {'date': toMillis(e.date), 'type': e.type.name, 'amount': e.amount, 'note': e.note, 'reference': e.reference, 'account': e.account.name},
+    toJson: (e) => {'date': toMillis(e.date), 'type': e.type.name, 'amount': e.amount, 'note': e.note, 'reference': e.reference, 'account': e.account},
     fromJson: (j) => CashLedgerEntry(
       id: j['id'],
       date: fromMillis(j['date']),
@@ -18,7 +17,7 @@ class CashRepositoryImpl implements CashRepository {
       amount: toDouble(j['amount']),
       note: j['note'] ?? '',
       reference: j['reference'] ?? '',
-      account: LedgerAccount.values.byName(j['account'] ?? LedgerAccount.cash.name),
+      account: j['account'] ?? 'cash',
     ),
   );
 
@@ -29,14 +28,7 @@ class CashRepositoryImpl implements CashRepository {
     fromJson: (j) => Expense(id: j['id'], date: fromMillis(j['date']), category: j['category'] ?? '', amount: toDouble(j['amount']), note: j['note'] ?? '', createdByName: j['createdByName'] ?? ''),
   );
 
-  final _partnerLedger = SyncedCollection<PartnerLedgerEntry>(
-    'partnerLedger',
-    idOf: (e) => e.id,
-    toJson: (e) => {'date': toMillis(e.date), 'partnerName': e.partnerName, 'amount': e.amount, 'type': e.type, 'note': e.note},
-    fromJson: (j) => PartnerLedgerEntry(id: j['id'], date: fromMillis(j['date']), partnerName: j['partnerName'] ?? '', amount: toDouble(j['amount']), type: j['type'] ?? '', note: j['note'] ?? ''),
-  );
-
-  List<SyncedCollection<Object?>> get collections => [_ledger, _expenses, _partnerLedger];
+  List<SyncedCollection<Object?>> get collections => [_ledger, _expenses];
 
   @override
   List<CashLedgerEntry> get ledger => _ledger.items;
@@ -45,13 +37,10 @@ class CashRepositoryImpl implements CashRepository {
   List<Expense> get expenses => _expenses.items;
 
   @override
-  List<PartnerLedgerEntry> get partnerLedger => _partnerLedger.items;
+  double get cashInHand => balanceOf('cash');
 
   @override
-  double get cashInHand => balanceOf(LedgerAccount.cash);
-
-  @override
-  double balanceOf(LedgerAccount account) => ledger.where((e) => e.account == account).fold(0.0, (sum, e) => sum + e.signedAmount);
+  double balanceOf(String account) => ledger.where((e) => e.account == account).fold(0.0, (sum, e) => sum + e.signedAmount);
 
   @override
   double get todayExpenses {
@@ -65,18 +54,13 @@ class CashRepositoryImpl implements CashRepository {
   double get totalExpensesAllTime => expenses.fold(0.0, (sum, e) => sum + e.amount);
 
   @override
-  void addLedgerEntry({required CashEntryType type, required double amount, required String note, String reference = '', LedgerAccount account = LedgerAccount.cash}) {
+  void addLedgerEntry({required CashEntryType type, required double amount, required String note, String reference = '', String account = 'cash'}) {
     _ledger.add(CashLedgerEntry(id: nextId('L'), date: DateTime.now(), type: type, amount: amount, note: note, reference: reference, account: account));
   }
 
   @override
-  void addExpense(String category, double amount, String note, {String createdByName = ''}) {
+  void addExpense(String category, double amount, String note, {String createdByName = '', String account = 'cash'}) {
     _expenses.add(Expense(id: nextId('E'), date: DateTime.now(), category: category, amount: amount, note: note, createdByName: createdByName));
-    addLedgerEntry(type: CashEntryType.expense, amount: amount, note: '$category${note.isEmpty ? '' : ' - $note'}');
-  }
-
-  @override
-  void addPartnerEntry(String partnerName, double amount, String type, String note, {DateTime? date}) {
-    _partnerLedger.add(PartnerLedgerEntry(id: nextId('PL'), date: date ?? DateTime.now(), partnerName: partnerName, amount: amount, type: type, note: note));
+    addLedgerEntry(type: CashEntryType.expense, amount: amount, note: '$category${note.isEmpty ? '' : ' - $note'}', account: account);
   }
 }

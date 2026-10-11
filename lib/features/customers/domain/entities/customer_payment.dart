@@ -1,12 +1,11 @@
-import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 
 enum PaymentMethod { cash, wallet, bank, cheque }
 
-LedgerAccount ledgerAccountFor(PaymentMethod m) => switch (m) {
-      PaymentMethod.cash => LedgerAccount.cash,
-      PaymentMethod.wallet => LedgerAccount.wallet,
-      PaymentMethod.bank || PaymentMethod.cheque => LedgerAccount.bank,
+String ledgerAccountFor(PaymentMethod m) => switch (m) {
+      PaymentMethod.cash => 'cash',
+      PaymentMethod.wallet => 'wallet',
+      PaymentMethod.bank || PaymentMethod.cheque => 'bank',
     };
 
 /// A payment step that isn't allowed, with a user-presentable [message].
@@ -31,8 +30,8 @@ String paymentMethodLabel(PaymentMethod m) => switch (m) {
 /// its own fields, and the backend refuses anything else.
 ///
 /// Two independent checks make it trustworthy:
-/// - **Customer side** — confirmed at the door with the order's delivery
-///   code, or later in the customer's app; or disputed.
+/// - **Customer side** — signed for at the door, or confirmed by a phone
+///   call from staff other than the collector; or disputed.
 /// - **Business side** — "settled": someone with `reconcileCash` (not the
 ///   collector) counted the cash into the till or verified the reference.
 class CustomerPayment {
@@ -48,12 +47,11 @@ class CustomerPayment {
     required this.balanceAfter,
     required this.collectedById,
     required this.collectedByName,
-    this.deliveryCode,
     this.signature,
     this.signedName = '',
+    this.autoConfirmed = false,
     this.phoneConfirmedAt,
     this.phoneConfirmedByName = '',
-    this.customerConfirmedAt,
     this.disputedAt,
     this.disputeNote = '',
     this.settledAt,
@@ -84,25 +82,22 @@ class CustomerPayment {
   final String collectedById;
   final String collectedByName;
 
-  /// The code the customer gave at the door. The backend only accepts the
-  /// payment if it matches that order's code, so non-null = verified.
-  final String? deliveryCode;
-
   /// Customer's handwritten signature (encoded `Signature`) and the name
-  /// they gave, captured on the collector's phone — for customers without
-  /// the app, or as extra proof.
+  /// they gave, captured on the collector's phone.
   final String? signature;
   final String signedName;
+
+  /// Recorded unsigned while the shop's phone-check safeguard was off, so it
+  /// needs no customer confirmation.
+  final bool autoConfirmed;
 
   /// Staff other than the collector phoned the customer, who confirmed.
   DateTime? phoneConfirmedAt;
   String phoneConfirmedByName;
 
-  /// Who recorded the dispute (the customer in the app, or staff on their
-  /// behalf after a call).
+  /// Who recorded the dispute (staff, on the customer's behalf after a call).
   String disputedByName = '';
 
-  DateTime? customerConfirmedAt;
   DateTime? disputedAt;
   String disputeNote;
 
@@ -118,9 +113,8 @@ class CustomerPayment {
   bool get isReversed => reversedAt != null;
   bool get isSettled => settledAt != null;
   bool get isDisputed => disputedAt != null;
-  bool get confirmedByCode => deliveryCode != null;
   bool get confirmedBySignature => signature != null;
-  bool get isCustomerConfirmed => confirmedByCode || confirmedBySignature || customerConfirmedAt != null || phoneConfirmedAt != null;
+  bool get isCustomerConfirmed => confirmedBySignature || autoConfirmed || phoneConfirmedAt != null;
 
   /// Counted less than collected — owed by the collector.
   double get shortfall => isSettled ? amount - settledAmount! : 0;

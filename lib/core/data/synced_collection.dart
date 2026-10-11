@@ -169,8 +169,8 @@ class SyncedCollection<T> {
   /// Merges [data] into document [id] on the server, bypassing the mirror.
   void patch(String id, Json data) => _writes?.enqueue(PutOp(name, id, data));
 
-  /// Nulls a field on the server (data migrations).
-  void clearField(T item, String field) => patch(idOf(item), {field: null});
+  /// Appends values missing from array fields of document [id], bypassing the mirror.
+  void union(String id, Map<String, List<Object?>> values) => _writes?.enqueue(ArrayUnionOp(name, id, values));
 
   /// The last version of document [id] the server sent (mirrored collections only).
   Json? serverDoc(String id) {

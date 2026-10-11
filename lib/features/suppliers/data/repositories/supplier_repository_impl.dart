@@ -11,7 +11,8 @@ void _mergeSupplier(Supplier s, Json j) {
     ..phone = j['phone'] ?? ''
     ..address = j['address'] ?? ''
     ..productsSupplied = j['productsSupplied'] ?? ''
-    ..amountPayable = toDouble(j['amountPayable']);
+    ..amountPayable = toDouble(j['amountPayable'])
+    ..pan = j['pan'] ?? '';
 }
 
 class SupplierRepositoryImpl implements SupplierRepository {
@@ -25,6 +26,7 @@ class SupplierRepositoryImpl implements SupplierRepository {
       'address': s.address,
       'productsSupplied': s.productsSupplied,
       'amountPayable': s.amountPayable,
+      'pan': s.pan,
     },
     fromJson: (j) {
       final s = Supplier(id: j['id'], name: '', businessName: '', phone: '', address: '');
@@ -46,8 +48,8 @@ class SupplierRepositoryImpl implements SupplierRepository {
   double get totalPayable => suppliers.fold(0.0, (sum, s) => sum + s.amountPayable);
 
   @override
-  Supplier create({required String name, required String businessName, required String phone, required String address, String productsSupplied = '', double amountPayable = 0}) {
-    final supplier = Supplier(id: nextId('SU'), name: name, businessName: businessName, phone: phone, address: address, productsSupplied: productsSupplied, amountPayable: amountPayable);
+  Supplier create({required String name, required String businessName, required String phone, required String address, String productsSupplied = '', double amountPayable = 0, String pan = ''}) {
+    final supplier = Supplier(id: nextId('SU'), name: name, businessName: businessName, phone: phone, address: address, productsSupplied: productsSupplied, amountPayable: amountPayable, pan: pan);
     _suppliers.add(supplier);
     return supplier;
   }

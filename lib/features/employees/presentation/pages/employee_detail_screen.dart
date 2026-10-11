@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/features/auth/domain/entities/app_user.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/employees/presentation/controllers/employees_controller.dart';
 
@@ -44,9 +45,15 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          ListTile(contentPadding: EdgeInsets.zero, title: const Text('Email'), subtitle: Text(user.email)),
           ListTile(contentPadding: EdgeInsets.zero, title: const Text('Phone'), subtitle: Text(user.phone)),
-          ListTile(contentPadding: EdgeInsets.zero, title: const Text('Role'), subtitle: Text(user.role.name)),
-          SwitchListTile(
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Role'),
+            subtitle: Text(user.role != UserRole.owner ? user.role.name : (user.id == widget.auth.founderId ? 'Founding owner' : 'Co-owner')),
+          ),
+          if (user.role != UserRole.owner || (widget.auth.isFounder && user.id != widget.auth.founderId))
+            SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Active'),
             value: user.active,
@@ -55,6 +62,44 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
               setState(() {});
             },
           ),
+          if (user.role == UserRole.owner && widget.auth.isFounder && user.id != widget.auth.founderId && user.active)
+            OutlinedButton.icon(
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('Make founding owner'),
+              onPressed: () => _handOver(user),
+            ),
+          if (user.role == UserRole.employee)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Can handle cash & accounts'),
+              subtitle: const Text('Count cash in, expenses, purchases, suppliers, reports and credit terms'),
+              value: user.can(Permission.reconcileCash),
+              onChanged: (v) {
+                widget.controller.setCashAccess(user, v, userName: widget.auth.currentUser?.name ?? '');
+                setState(() => _permissions
+                  ..clear()
+                  ..addAll(user.permissions));
+              },
+            ),
+          if (user.role == UserRole.employee)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Can sell below minimum price'),
+              subtitle: const Text('Clearance and damaged stock. Every such sale is logged and you are notified.'),
+              value: user.can(Permission.sellBelowMinimum),
+              onChanged: (v) {
+                final current = user.permissions;
+                widget.controller.updatePermissions(
+                  user,
+                  v ? {...current, Permission.sellBelowMinimum} : ({...current}..remove(Permission.sellBelowMinimum)),
+                  userName: widget.auth.currentUser?.name ?? '',
+                );
+                setState(() => _permissions
+                  ..clear()
+                  ..addAll(user.permissions));
+              },
+            ),
+          if (user.role != UserRole.owner) ...[
           const Divider(height: 32),
           Text('Permissions', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -79,8 +124,27 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
             },
             child: const Text('Save Permissions'),
           ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _handOver(AppUser coOwner) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Make ${coOwner.name} the founding owner?'),
+        content: const Text('They alone will be able to erase the shop, add or remove co-owners and hand the role on. You stay a co-owner.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Hand over')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    widget.controller.handOverFounding(coOwner, by: widget.auth.currentUser!);
+    widget.auth.founderId = coOwner.id;
+    setState(() {});
   }
 }

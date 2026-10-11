@@ -16,7 +16,7 @@ class PurchaseReturn {
   final DateTime date;
   final Supplier supplier;
   final Product product;
-  final int qty;
+  final double qty;
   final double unitCost;
   final String reason;
 

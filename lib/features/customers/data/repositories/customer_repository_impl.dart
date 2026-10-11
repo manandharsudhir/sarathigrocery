@@ -12,8 +12,7 @@ void _mergeCustomer(Customer c, Json j) {
     ..creditLimit = toDouble(j['creditLimit'])
     ..outstandingBalance = toDouble(j['outstandingBalance'])
     ..lastPaymentDate = fromMillisOrNull(j['lastPaymentDate'])
-    ..defaultDiscountPercent = toDouble(j['defaultDiscountPercent'])
-    ..hasAppLogin = j['hasAppLogin'] ?? false;
+    ..pan = j['pan'] ?? '';
 }
 
 class CustomerRepositoryImpl implements CustomerRepository {
@@ -27,9 +26,8 @@ class CustomerRepositoryImpl implements CustomerRepository {
       'creditLimit': c.creditLimit,
       'outstandingBalance': c.outstandingBalance,
       'lastPaymentDate': c.lastPaymentDate == null ? null : toMillis(c.lastPaymentDate!),
-      'defaultDiscountPercent': c.defaultDiscountPercent,
       'openingBalance': c.openingBalance,
-      'hasAppLogin': c.hasAppLogin,
+      'pan': c.pan,
     },
     fromJson: (j) {
       final c = Customer(id: j['id'], name: '', phone: '', location: '', creditLimit: 0, openingBalance: (j['openingBalance'] as num?)?.toDouble());
@@ -48,16 +46,16 @@ class CustomerRepositoryImpl implements CustomerRepository {
   Customer? byId(String? id) => _customers.byId(id);
 
   @override
-  Customer create({required String name, required String phone, required String location, required double creditLimit, double defaultDiscountPercent = 0, double openingBalance = 0}) {
+  Customer create({required String name, required String phone, required String location, required double creditLimit, double openingBalance = 0, String pan = ''}) {
     final customer = Customer(
       id: nextId('C'),
       name: name,
       phone: phone,
       location: location,
       creditLimit: creditLimit,
-      defaultDiscountPercent: defaultDiscountPercent,
       outstandingBalance: openingBalance,
       openingBalance: openingBalance,
+      pan: pan,
     );
     _customers.add(customer);
     return customer;

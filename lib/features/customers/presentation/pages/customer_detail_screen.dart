@@ -38,7 +38,6 @@ class CustomerDetailScreen extends StatelessWidget {
         final (label, color) = creditStatusVisual(customer.creditStatus);
         final statement = controller.payments.statementFor(customer);
         final canManage = auth.can(Permission.manageCustomers);
-        final login = controller.loginFor(customer);
 
         return Scaffold(
           appBar: AppBar(
@@ -73,8 +72,6 @@ class CustomerDetailScreen extends StatelessWidget {
                 label: 'Last Payment',
                 value: customer.lastPaymentDate == null ? 'Never' : formatDaysAgo(customer.lastPaymentDate!),
               ),
-              if (customer.defaultDiscountPercent > 0) _InfoRow(label: 'Default Discount', value: '${customer.defaultDiscountPercent}%'),
-              _InfoRow(label: 'App Login', value: login == null ? (customer.hasAppLogin ? 'Yes' : 'None — signs for deliveries, confirmed by phone') : '${login.phone}${login.active ? '' : ' (deactivated)'}'),
               const SizedBox(height: 24),
               FilledButton.icon(
                 onPressed: customer.outstandingBalance <= 0 ? null : () => showCollectPaymentSheet(context, customer, controller, auth),
@@ -87,14 +84,6 @@ class CustomerDetailScreen extends StatelessWidget {
                 icon: const Icon(Icons.receipt_long_outlined),
                 label: const Text('Statement'),
               ),
-              if (canManage && login == null) ...[
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: () => showCreateCustomerLoginSheet(context, customer, controller, auth),
-                  icon: const Icon(Icons.phonelink_setup_outlined),
-                  label: const Text('Create App Login'),
-                ),
-              ],
             ],
           ),
         );
@@ -113,7 +102,7 @@ void showCollectPaymentSheet(BuildContext context, Customer customer, CustomersC
       onSubmit: (input) async {
         final payment = controller.payments.record(customer, input.amount,
             method: input.method, reference: input.reference, signature: input.signature, signedName: input.signedName, collector: auth.currentUser!);
-        return payment.isSettled ? 'Payment recorded.' : 'Payment recorded — hand the ${input.method == PaymentMethod.cash ? 'cash' : 'reference'} to the owner/accountant.';
+        return payment.isSettled ? 'Payment recorded.' : 'Payment recorded — hand the ${input.method == PaymentMethod.cash ? 'cash' : 'reference'} to the owner or cash staff.';
       },
     ),
   );

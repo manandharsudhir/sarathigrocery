@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
+import 'package:sarathigrocery/features/accounting/presentation/controllers/accounting_controller.dart';
+import 'package:sarathigrocery/features/accounting/presentation/pages/accounting_forms.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
+import 'package:sarathigrocery/features/auth/presentation/pages/profile_screen.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/employees/presentation/controllers/employees_controller.dart';
 import 'package:sarathigrocery/features/employees/presentation/pages/employee_detail_screen.dart';
+import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
+import 'package:sarathigrocery/features/settings/presentation/controllers/settings_controller.dart';
 
 class EmployeesScreen extends StatelessWidget {
-  const EmployeesScreen({super.key, required this.controller, required this.auth});
+  const EmployeesScreen({super.key, required this.controller, required this.auth, required this.settings, required this.accounting});
 
   final EmployeesController controller;
   final AuthController auth;
+  final SettingsController settings;
+  final AccountingController accounting;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +38,8 @@ class EmployeesScreen extends StatelessWidget {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Theme.of(context).dividerColor)),
                 child: ListTile(
                   title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('${user.role.name} · ${user.phone}'),
+                  subtitle: Text('${user.role == UserRole.owner ? (user.id == auth.founderId ? 'Founding owner' : 'Co-owner') : roleLabel(user.role)}'
+                      '${user.can(Permission.reconcileCash) && user.role != UserRole.owner ? ' · cash & accounts' : ''} · ${user.phone}'),
                   trailing: user.active ? const Icon(Icons.check_circle, color: Colors.green) : const Icon(Icons.pause_circle_outline, color: Colors.grey),
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EmployeeDetailScreen(controller: controller, auth: auth, user: user))),
                 ),
@@ -48,7 +57,9 @@ class EmployeesScreen extends StatelessWidget {
   }
 
   void _showAddSheet(BuildContext context, EmployeesController controller, AuthController auth) {
+    final screen = context;
     final name = TextEditingController();
+    final email = TextEditingController();
     final phone = TextEditingController();
     final password = TextEditingController();
     var role = UserRole.employee;
@@ -67,17 +78,20 @@ class EmployeesScreen extends StatelessWidget {
               const SizedBox(height: 12),
               TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
               const SizedBox(height: 8),
-              TextField(controller: phone, decoration: const InputDecoration(labelText: 'Phone')),
+              TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email (used to log in)')),
               const SizedBox(height: 8),
-              TextField(controller: password, decoration: const InputDecoration(labelText: 'Temporary password (min 8 characters)')),
+              TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone')),
+              const SizedBox(height: 8),
+              TextField(controller: password, decoration: const InputDecoration(labelText: 'Temporary password (min 8 characters)', helperText: 'Not used if this email already has a login')),
               const SizedBox(height: 8),
               DropdownButtonFormField<UserRole>(
                 initialValue: role,
                 decoration: const InputDecoration(labelText: 'Role'),
-                items: const [
-                  DropdownMenuItem(value: UserRole.employee, child: Text('Shop Employee')),
-                  DropdownMenuItem(value: UserRole.accountant, child: Text('Accountant')),
-                  DropdownMenuItem(value: UserRole.delivery, child: Text('Delivery')),
+                items: [
+                  const DropdownMenuItem(value: UserRole.employee, child: Text('Staff')),
+                  const DropdownMenuItem(value: UserRole.delivery, child: Text('Delivery')),
+                  // Co-owners have every owner right except erasing the shop.
+                  if (auth.isFounder) const DropdownMenuItem(value: UserRole.owner, child: Text('Co-owner (partner)')),
                 ],
                 onChanged: (v) => setSheetState(() => role = v ?? role),
               ),
@@ -86,19 +100,31 @@ class EmployeesScreen extends StatelessWidget {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: () async {
-                    if (name.text.trim().isEmpty || phone.text.trim().isEmpty || password.text.isEmpty) return;
-                    final error = await controller.createEmployeeAccount(
+                    if (name.text.trim().isEmpty || email.text.trim().isEmpty || phone.text.trim().isEmpty) return;
+                    final result = await controller.createEmployeeAccount(
                       name: name.text.trim(),
+                      email: email.text,
                       phone: phone.text.trim(),
                       password: password.text,
                       role: role,
                       userName: auth.currentUser?.name ?? '',
+                      byFounder: auth.isFounder,
                     );
                     if (!context.mounted) return;
-                    if (error != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+                    final messenger = ScaffoldMessenger.of(context);
+                    if (result.error != null) {
+                      messenger.showSnackBar(SnackBar(content: Text(result.error!)));
                     } else {
                       Navigator.pop(context);
+                      if (result.existingLogin) {
+                        messenger.showSnackBar(const SnackBar(content: Text('Added — they sign in with their existing password.')));
+                      }
+                      if (role == UserRole.owner && screen.mounted) {
+                        // A partner also needs a share of the business.
+                        Navigator.push(screen, MaterialPageRoute(builder: (_) => AccountsSetupScreen(controller: accounting, auth: auth, addOwner: name.text.trim())));
+                      } else if (screen.mounted) {
+                        _offerSafeguards(screen);
+                      }
                     }
                   },
                   child: const Text('Add Employee'),
@@ -107,6 +133,30 @@ class EmployeesScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// After the owner adds the first staff account, while every safeguard
+  /// is off: one tap turns them all on.
+  void _offerSafeguards(BuildContext context) {
+    final firstStaff = controller.employees.where((u) => u.role != UserRole.owner).length == 1;
+    if (auth.currentUser?.role != UserRole.owner || !firstStaff || Safeguard.values.any(settings.guards)) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Turn on safeguards for staff?'),
+        content: Text('${[for (final g in Safeguard.values) '• ${g.label}'].join('\n')}\n\nYou can change these any time in Settings → Safeguards.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Not now')),
+          FilledButton(
+            onPressed: () {
+              settings.enableAllSafeguards();
+              Navigator.pop(context);
+            },
+            child: const Text('Turn on'),
+          ),
+        ],
       ),
     );
   }

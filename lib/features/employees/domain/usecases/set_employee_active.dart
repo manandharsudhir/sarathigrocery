@@ -11,6 +11,6 @@ class SetEmployeeActive {
   void call(AppUser user, bool active, {required String userName}) {
     user.active = active;
     _users.update(user);
-    _audit.record(userName, active ? 'Employee activated' : 'Employee deactivated', 'User', entityId: user.id);
+    _audit.record(userName, '${user.role.name == 'owner' ? 'Co-owner' : 'Employee'} ${active ? 'activated' : 'deactivated'}', 'User', entityId: user.id);
   }
 }

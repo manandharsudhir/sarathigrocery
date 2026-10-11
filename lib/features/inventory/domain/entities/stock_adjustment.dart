@@ -15,6 +15,6 @@ class StockAdjustment {
   final DateTime date;
   final Product product;
   final AdjustmentType type;
-  final int qty;
+  final double qty;
   final String note;
 }

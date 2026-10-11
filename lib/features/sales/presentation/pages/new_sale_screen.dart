@@ -4,11 +4,17 @@ import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
-import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
+import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product_pack.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
-import 'package:sarathigrocery/features/sales/domain/entities/sale_constants.dart';
+import 'package:sarathigrocery/features/sales/domain/entities/sale.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale_item.dart';
+import 'package:sarathigrocery/features/sales/domain/entities/vat.dart';
 import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
+import 'package:sarathigrocery/features/sales/presentation/pages/invoice_screen.dart';
+import 'package:sarathigrocery/features/accounting/domain/books.dart';
+import 'package:sarathigrocery/features/sales/presentation/widgets/cart_editor.dart';
 
 class NewSaleScreen extends StatefulWidget {
   const NewSaleScreen({super.key, required this.sales, required this.inventory, required this.customers, required this.auth});
@@ -25,93 +31,87 @@ class NewSaleScreen extends StatefulWidget {
 class _NewSaleScreenState extends State<NewSaleScreen> {
   Customer? _customer;
   bool _isCredit = false;
-  double _discountPercent = 0;
-  final _discountController = TextEditingController(text: '0');
-  final Map<Product, int> _cart = {};
+  final List<CartLine> _lines = [];
+  String _account = 'cash';
+  String? _error;
 
-  double get _subtotal => _cart.entries.fold(0.0, (sum, e) => sum + e.key.unitPrice * e.value);
-  double get _total => _subtotal - _subtotal * _discountPercent / 100;
+  bool get _allowBelowMinimum => widget.auth.can(Permission.sellBelowMinimum);
+
+  double get _lines$ => _lines.fold(0.0, (sum, l) => sum + l.total);
+
+  /// VAT on the cart (VAT shops), and what the customer pays.
+  ({double vat, double total}) get _bill {
+    final terms = widget.sales.vatTerms;
+    final taxable = _lines.where((l) => !l.product.vatExempt).fold(0.0, (sum, l) => sum + l.total);
+    final vat = vatOn(taxable, terms);
+    return (vat: vat, total: _lines$ + (terms != null && !terms.included ? vat : 0));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final products = widget.inventory.products.where((p) => p.isActive).toList();
-
     return Scaffold(
       appBar: AppBar(title: const Text('New Sale')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          DropdownButtonFormField<Customer?>(
-            initialValue: _customer,
-            decoration: const InputDecoration(labelText: 'Customer (optional)'),
-            items: [
-              const DropdownMenuItem(value: null, child: Text('Walk-in / Cash customer')),
-              ...widget.customers.customers.map((c) => DropdownMenuItem(value: c, child: Text(c.name))),
+          DropdownMenu<Customer?>(
+            initialSelection: _customer,
+            label: const Text('Customer (optional)'),
+            expandedInsets: EdgeInsets.zero,
+            enableFilter: true,
+            requestFocusOnTap: true,
+            dropdownMenuEntries: [
+              const DropdownMenuEntry(value: null, label: 'Walk-in / Cash customer'),
+              for (final c in widget.customers.customers) DropdownMenuEntry(value: c, label: c.name),
             ],
-            onChanged: (c) => setState(() {
+            onSelected: (c) => setState(() {
               _customer = c;
-              if (c == null) {
-                _isCredit = false;
-              } else if (c.defaultDiscountPercent > 0 && _discountPercent == 0) {
-                _discountPercent = c.defaultDiscountPercent;
-                _discountController.text = _discountPercent.toStringAsFixed(0);
-              }
+              if (c == null) _isCredit = false;
             }),
           ),
+          if (_customer != null)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Udharo (Credit)'),
+              value: _isCredit,
+              onChanged: (v) => setState(() => _isCredit = v),
+            ),
+          if (_isCredit && _customer != null && _customer!.outstandingBalance + _bill.total > _customer!.creditLimit)
+            Text(
+              'Over ${_customer!.name}\'s credit limit by ${formatNpr(_customer!.outstandingBalance + _bill.total - _customer!.creditLimit)}. You can still sell; the owner is told.',
+              style: const TextStyle(color: Colors.orange),
+            ),
+          if (!_isCredit)
+            DropdownButtonFormField<String>(
+              initialValue: _account,
+              decoration: const InputDecoration(labelText: 'Paid into'),
+              items: [for (final a in widget.sales.moneyAccounts) DropdownMenuItem(value: a, child: Text(accountName(a)))],
+              onChanged: (v) => setState(() => _account = v ?? _account),
+            ),
           const SizedBox(height: 16),
           Text('Items', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          ...products.map((p) => ProductQtyRow(
-                product: p,
-                qty: _cart[p] ?? 0,
-                onChanged: (qty) => setState(() {
-                  if (qty <= 0) {
-                    _cart.remove(p);
-                  } else {
-                    _cart[p] = qty;
-                  }
-                }),
-              )),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _discountController,
-                  decoration: const InputDecoration(labelText: 'Discount %'),
-                  keyboardType: TextInputType.number,
-                  onChanged: (v) => setState(() => _discountPercent = double.tryParse(v) ?? 0),
-                ),
-              ),
-              const SizedBox(width: 16),
-              if (_customer != null)
-                Expanded(
-                  child: SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Udharo (Credit)'),
-                    value: _isCredit,
-                    onChanged: (v) => setState(() => _isCredit = v),
-                  ),
-                ),
-            ],
+          CartEditor(
+            products: widget.inventory.products.where((p) => p.isActive).toList(),
+            lines: _lines,
+            onChanged: () => setState(() => _error = null),
+            priceFor: (p, unit) => p.floorFor(unit.label) ?? 0,
+            allowBelowMinimum: _allowBelowMinimum,
           ),
-          if (_discountPercent > kMaxAutoApprovedDiscountPercent)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Discount above 10% needs joint approval.',
-                style: TextStyle(color: Colors.orange),
-              ),
-            ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
           const SizedBox(height: 24),
-          Text('Total: ${formatNpr(_total)}', style: Theme.of(context).textTheme.headlineSmall),
+          if (widget.sales.issuesTaxInvoices) Text('VAT ${widget.sales.vatTerms!.included ? '(included)' : ''}: ${formatNpr(_bill.vat)}'),
+          Text('Total: ${formatNpr(_bill.total)}', style: Theme.of(context).textTheme.headlineSmall),
         ],
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton(
-            onPressed: _cart.isEmpty ? null : _submit,
+            onPressed: _lines.isEmpty || _saving ? null : _submit,
             child: const Text('Complete Sale'),
           ),
         ),
@@ -119,70 +119,68 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     );
   }
 
-  void _submit() {
-    final items = _cart.entries
-        .map((e) => SaleItem(product: e.key, qty: e.value, unitPrice: e.key.unitPrice))
-        .toList();
+  bool _saving = false;
 
-    final sale = widget.sales.recordSale(
-      items: items,
-      discountPercent: _discountPercent,
-      isCredit: _isCredit,
-      customer: _customer,
-      userName: widget.auth.currentUser?.name ?? '',
-      userId: widget.auth.currentUser?.id,
-    );
+  Future<void> _submit() async {
+    final problem = cartProblem(_lines, checkMinimum: true, allowBelowMinimum: _allowBelowMinimum, checkStock: true);
+    if (problem != null) {
+      setState(() => _error = problem);
+      return;
+    }
+    final items = [
+      for (final l in _lines) SaleItem(product: l.product, qty: l.qtyValue, unitPrice: l.priceValue, unit: l.unit.label, size: l.unit.size),
+    ];
+
+    final Sale sale;
+    setState(() => _saving = true);
+    try {
+      sale = await widget.sales.sell(
+        items: items,
+        isCredit: _isCredit,
+        customer: _customer,
+        userName: widget.auth.currentUser?.name ?? '',
+        userId: widget.auth.currentUser?.id,
+        allowBelowMinimum: _allowBelowMinimum,
+        account: _account,
+      );
+    } on BelowMinimumPriceException catch (e) {
+      setState(() => _error = e.message);
+      return;
+    } on UnpricedProductException catch (e) {
+      setState(() => _error = e.message);
+      return;
+    } on AccountingException catch (e) {
+      setState(() => _error = e.message);
+      return;
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+    if (!mounted) return;
     final needsApproval = sale.flaggedForApproval;
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(needsApproval ? 'Sale Flagged for Approval' : 'Sale Complete'),
+        title: Text(needsApproval ? 'Sale Recorded: over credit limit' : (sale.invoiceNumber == null ? 'Sale Complete' : 'Tax invoice ${sale.invoiceNumber}')),
         content: Text(
           '${_customer?.name ?? 'Walk-in customer'}\n'
-          'Total: ${formatNpr(_total)}\n'
-          '${_isCredit ? 'Recorded as Udharo (Credit)' : 'Paid in cash'}'
-          '${needsApproval ? '\n\nThis order exceeds normal discount or credit limits and needs joint sign-off.' : ''}',
+          'Total: ${formatNpr(sale.total)}\n'
+          '${_isCredit ? 'Recorded as Udharo (Credit)' : 'Paid into ${accountName(_account)}'}'
+          '${needsApproval ? '\n\nThis takes the customer over their credit limit. Recorded, and the owner is told.' : ''}',
         ),
         actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context)
+              ..pop()
+              ..pushReplacement(MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, seller: widget.sales.seller))),
+            child: const Text('View bill'),
+          ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               Navigator.pop(context);
             },
             child: const Text('Done'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Product with −/+ quantity stepper, limited to available stock.
-class ProductQtyRow extends StatelessWidget {
-  const ProductQtyRow({super.key, required this.product, required this.qty, required this.onChanged});
-
-  final Product product;
-  final int qty;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(product.name),
-      subtitle: Text('${formatNpr(product.unitPrice)} · ${product.availableStock} available'),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.remove_circle_outline),
-            onPressed: qty > 0 ? () => onChanged(qty - 1) : null,
-          ),
-          SizedBox(width: 24, child: Text('$qty', textAlign: TextAlign.center)),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            onPressed: qty < product.availableStock ? () => onChanged(qty + 1) : null,
           ),
         ],
       ),

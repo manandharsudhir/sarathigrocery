@@ -25,6 +25,15 @@ class IncrementOp extends WriteOp {
   final Map<String, num> deltas;
 }
 
+/// Appends each value missing from its array field (creating the document
+/// or field if needed), so concurrent appends from different devices all
+/// land and nothing already there is rewritten.
+class ArrayUnionOp extends WriteOp {
+  const ArrayUnionOp(super.collection, super.id, this.values);
+
+  final Map<String, List<Object?>> values;
+}
+
 class DeleteOp extends WriteOp {
   const DeleteOp(super.collection, super.id);
 }
@@ -52,8 +61,7 @@ abstract class RemoteStore {
   /// writes immediately (Firestore does, via latency compensation).
   Stream<List<Json>> watch(String collection, {String? id, Map<String, Object?> where = const {}});
 
-  /// One-shot read; null if missing. Works before sign-in only where the
-  /// backend allows it (e.g. `meta/setup`).
+  /// One-shot read; null if missing.
   Future<Json?> get(String collection, String id);
 
   /// Ids of every document in [collection], straight from the server.
@@ -65,11 +73,58 @@ abstract class RemoteStore {
   Future<void> commit(List<WriteOp> ops, {bool requireOnline = false});
 }
 
+/// Puts every collection under the current shop (`shops/{shopId}/<name>`),
+/// so repositories and use cases keep plain collection names. [global]
+/// collections stay top-level. [AppScope] wraps whatever store it is given.
+class ShopScopedStore implements RemoteStore {
+  ShopScopedStore(this._inner);
+
+  final RemoteStore _inner;
+
+  /// `accounts/{uid}` (`{shopIds}`), `emails/{email}` (`{uid}`) and the
+  /// `shops/{shopId}` docs themselves.
+  static const global = {'accounts', 'emails', 'shops'};
+
+  /// Set at login and when creating a shop, before any shop data is touched.
+  /// Paths resolve when a batch is committed (the microtask after it was
+  /// queued), so a later switch never redirects already-queued writes.
+  String? shopId;
+
+  String _path(String collection) {
+    if (global.contains(collection)) return collection;
+    final id = shopId;
+    if (id == null) throw StateError('No shop selected for $collection');
+    return 'shops/$id/$collection';
+  }
+
+  @override
+  Stream<List<Json>> watch(String collection, {String? id, Map<String, Object?> where = const {}}) =>
+      _inner.watch(_path(collection), id: id, where: where);
+
+  @override
+  Future<Json?> get(String collection, String id) => _inner.get(_path(collection), id);
+
+  @override
+  Future<List<String>> listIds(String collection) => _inner.listIds(_path(collection));
+
+  @override
+  Future<void> commit(List<WriteOp> ops, {bool requireOnline = false}) => _inner.commit([
+        for (final op in ops)
+          switch (op) {
+            PutOp(:final data) => PutOp(_path(op.collection), op.id, data),
+            IncrementOp(:final deltas) => IncrementOp(_path(op.collection), op.id, deltas),
+            ArrayUnionOp(:final values) => ArrayUnionOp(_path(op.collection), op.id, values),
+            DeleteOp() => DeleteOp(_path(op.collection), op.id),
+          },
+      ], requireOnline: requireOnline);
+}
+
 bool _matches(Json doc, String? id, Map<String, Object?> where) =>
     (id == null || doc['id'] == id) && where.entries.every((e) => doc[e.key] == e.value);
 
 /// In-process [RemoteStore] — used by tests, and runs the app with no
-/// backend at all. Enforces no access rules.
+/// backend at all. Enforces no access rules. Collections are keyed by their
+/// full path (`shops/S1/products`), as in Firestore.
 class InMemoryRemoteStore implements RemoteStore {
   final Map<String, Map<String, Json>> _data = {};
 
@@ -98,8 +153,9 @@ class InMemoryRemoteStore implements RemoteStore {
   @override
   Future<List<String>> listIds(String collection) async => (_data[collection] ?? {}).keys.toList();
 
-  /// Every document, for tests.
-  int get documentCount => _data.values.fold(0, (sum, docs) => sum + docs.length);
+  /// Documents in collections whose path starts with [prefix], for tests.
+  int documentCount([String prefix = '']) =>
+      _data.entries.where((e) => e.key.startsWith(prefix)).fold(0, (sum, e) => sum + e.value.length);
 
   @override
   Future<Json?> get(String collection, String id) async {
@@ -119,6 +175,12 @@ class InMemoryRemoteStore implements RemoteStore {
         case IncrementOp(:final deltas):
           final doc = docs[op.id] ??= {};
           deltas.forEach((field, delta) => doc[field] = ((doc[field] as num?) ?? 0) + delta);
+        case ArrayUnionOp(:final values):
+          final doc = docs[op.id] ??= {};
+          values.forEach((field, add) {
+            final list = [...?doc[field] as List?];
+            doc[field] = [...list, for (final v in add) if (!list.contains(v)) v];
+          });
         case DeleteOp():
           docs.remove(op.id);
       }

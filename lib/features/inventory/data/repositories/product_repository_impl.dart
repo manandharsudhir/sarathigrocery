@@ -3,6 +3,7 @@ import 'package:sarathigrocery/core/data/synced_collection.dart';
 import 'package:sarathigrocery/core/utils/id_generator.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/adjustment_type.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product_pack.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product_unit.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/stock_adjustment.dart';
 import 'package:sarathigrocery/features/inventory/domain/repositories/product_repository.dart';
@@ -13,7 +14,7 @@ Json _productToJson(Product p) => {
       'sku': p.sku,
       'brand': p.brand,
       'unitPrice': p.unitPrice,
-      'retailPrice': p.retailPrice,
+      'packs': [for (final k in p.packs) {'label': k.label, 'size': k.size, 'price': k.price}],
       'unit': p.unit.name,
       'customUnitLabel': p.customUnitLabel,
       'description': p.description,
@@ -22,6 +23,9 @@ Json _productToJson(Product p) => {
       'reservedQty': p.reservedQty,
       'reorderLevel': p.reorderLevel,
       'expiryDate': p.expiryDate == null ? null : toMillis(p.expiryDate!),
+      'vatExempt': p.vatExempt,
+      'primaryUnit': p.primaryUnit,
+      'saleUnit': p.saleUnit,
     };
 
 Product _productFromJson(Json j) {
@@ -37,15 +41,18 @@ void _mergeProduct(Product p, Json j) {
     ..sku = j['sku'] ?? ''
     ..brand = j['brand'] ?? ''
     ..unitPrice = toDouble(j['unitPrice'])
-    ..retailPrice = (j['retailPrice'] as num?)?.toDouble()
+    ..packs = [for (final k in (j['packs'] as List? ?? const [])) ProductPack(label: k['label'] ?? '', size: toDouble(k['size']), price: toDouble(k['price']))]
     ..unit = ProductUnit.values.byName(j['unit'] ?? ProductUnit.piece.name)
     ..customUnitLabel = j['customUnitLabel'] ?? ''
     ..description = j['description'] ?? ''
     ..isActive = j['isActive'] ?? true
-    ..stockQty = toInt(j['stockQty'])
-    ..reservedQty = toInt(j['reservedQty'])
-    ..reorderLevel = toInt(j['reorderLevel'])
-    ..expiryDate = fromMillisOrNull(j['expiryDate']);
+    ..stockQty = toDouble(j['stockQty'])
+    ..reservedQty = toDouble(j['reservedQty'])
+    ..reorderLevel = toDouble(j['reorderLevel'])
+    ..expiryDate = fromMillisOrNull(j['expiryDate'])
+    ..vatExempt = j['vatExempt'] ?? false
+    ..primaryUnit = j['primaryUnit'] ?? ''
+    ..saleUnit = j['saleUnit'] ?? '';
 }
 
 class ProductRepositoryImpl implements ProductRepository {
@@ -86,7 +93,7 @@ class ProductRepositoryImpl implements ProductRepository {
     fromJson: (j) {
       final product = _products.byId(j['productId']);
       if (product == null) return null;
-      return StockAdjustment(id: j['id'], date: fromMillis(j['date']), product: product, type: AdjustmentType.values.byName(j['type']), qty: toInt(j['qty']), note: j['note'] ?? '');
+      return StockAdjustment(id: j['id'], date: fromMillis(j['date']), product: product, type: AdjustmentType.values.byName(j['type']), qty: toDouble(j['qty']), note: j['note'] ?? '');
     },
   );
 
@@ -103,24 +110,6 @@ class ProductRepositoryImpl implements ProductRepository {
   List<StockAdjustment> get adjustments => _adjustments.items;
 
   Product? byId(String? id) => _products.byId(id);
-
-  /// Products created before cost prices moved to `productCosts` still carry
-  /// `purchasePrice` on the catalogue doc (visible to customers, and the
-  /// access rules refuse every update to such docs). Owner login moves them.
-  int migrateLegacyCosts() {
-    var moved = 0;
-    for (final product in products) {
-      final legacy = _products.serverDoc(product.id)?['purchasePrice'];
-      if (legacy == null) continue;
-      if (_costs.serverDoc(product.id) == null) {
-        product.purchasePrice = toDouble(legacy);
-        _costs.add(product);
-      }
-      _products.clearField(product, 'purchasePrice');
-      moved++;
-    }
-    return moved;
-  }
 
   @override
   int get lowStockCount => products.where((p) => p.isLowStock).length;
@@ -147,15 +136,18 @@ class ProductRepositoryImpl implements ProductRepository {
     required String category,
     required double unitPrice,
     double purchasePrice = 0,
-    double? retailPrice,
-    required int stockQty,
-    required int reorderLevel,
+    List<ProductPack> packs = const [],
+    required double stockQty,
+    required double reorderLevel,
     String sku = '',
     String brand = '',
     ProductUnit unit = ProductUnit.piece,
     String customUnitLabel = '',
     String description = '',
     DateTime? expiryDate,
+    bool vatExempt = false,
+    String primaryUnit = '',
+    String saleUnit = '',
   }) {
     final product = Product(
       id: nextId('P'),
@@ -163,7 +155,7 @@ class ProductRepositoryImpl implements ProductRepository {
       category: category,
       unitPrice: unitPrice,
       purchasePrice: purchasePrice,
-      retailPrice: retailPrice,
+      packs: packs,
       stockQty: stockQty,
       reorderLevel: reorderLevel,
       sku: sku,
@@ -172,6 +164,9 @@ class ProductRepositoryImpl implements ProductRepository {
       customUnitLabel: customUnitLabel,
       description: description,
       expiryDate: expiryDate,
+      vatExempt: vatExempt,
+      primaryUnit: primaryUnit,
+      saleUnit: saleUnit,
     );
     _products.add(product);
     _costs.add(product);
@@ -185,8 +180,8 @@ class ProductRepositoryImpl implements ProductRepository {
     String? category,
     double? unitPrice,
     double? purchasePrice,
-    double? retailPrice,
-    int? reorderLevel,
+    List<ProductPack>? packs,
+    double? reorderLevel,
     String? sku,
     String? brand,
     ProductUnit? unit,
@@ -194,12 +189,18 @@ class ProductRepositoryImpl implements ProductRepository {
     String? description,
     bool? isActive,
     DateTime? expiryDate,
+    bool? vatExempt,
+    String? primaryUnit,
+    String? saleUnit,
   }) {
+    if (vatExempt != null) product.vatExempt = vatExempt;
+    if (primaryUnit != null) product.primaryUnit = primaryUnit;
+    if (saleUnit != null) product.saleUnit = saleUnit;
     if (unitPrice != null) product.unitPrice = unitPrice;
     if (name != null) product.name = name;
     if (category != null) product.category = category;
     if (purchasePrice != null) product.purchasePrice = purchasePrice;
-    if (retailPrice != null) product.retailPrice = retailPrice;
+    if (packs != null) product.packs = packs;
     if (reorderLevel != null) product.reorderLevel = reorderLevel;
     if (sku != null) product.sku = sku;
     if (brand != null) product.brand = brand;
@@ -212,7 +213,7 @@ class ProductRepositoryImpl implements ProductRepository {
     if (purchasePrice != null) _costs.save(product);
   }
 
-  void _changeStock(Product product, {int stock = 0, int reserved = 0}) {
+  void _changeStock(Product product, {double stock = 0, double reserved = 0}) {
     product
       ..stockQty += stock
       ..reservedQty += reserved;
@@ -220,20 +221,21 @@ class ProductRepositoryImpl implements ProductRepository {
   }
 
   @override
-  void increaseStock(Product product, int qty) => _changeStock(product, stock: qty);
+  void increaseStock(Product product, double qty) => _changeStock(product, stock: qty);
 
   @override
-  void decreaseStock(Product product, int qty) => _changeStock(product, stock: -qty);
+  void decreaseStock(Product product, double qty) => _changeStock(product, stock: -qty);
 
   @override
-  void reserveStock(Product product, int qty) => _changeStock(product, reserved: qty);
+  void reserveStock(Product product, double qty) => _changeStock(product, reserved: qty);
 
   @override
-  void releaseReservation(Product product, int qty) => _changeStock(product, reserved: -qty);
+  void releaseReservation(Product product, double qty) => _changeStock(product, reserved: -qty);
 
   @override
-  void recordAdjustment(Product product, AdjustmentType type, int qty, String note) {
-    _changeStock(product, stock: -qty);
+  void recordAdjustment(Product product, AdjustmentType type, double qty, String note) {
+    // Returned goods come back into stock; damaged/expired leave it.
+    _changeStock(product, stock: type == AdjustmentType.returned ? qty : -qty);
     _adjustments.add(StockAdjustment(id: nextId('A'), date: DateTime.now(), product: product, type: type, qty: qty, note: note));
   }
 }

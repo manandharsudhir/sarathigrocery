@@ -8,7 +8,6 @@ int? _ms(DateTime? d) => d == null ? null : toMillis(d);
 
 void _mergePayment(CustomerPayment p, Json j) {
   p
-    ..customerConfirmedAt = fromMillisOrNull(j['customerConfirmedAt'])
     ..disputedAt = fromMillisOrNull(j['disputedAt'])
     ..disputeNote = j['disputeNote'] ?? ''
     ..disputedByName = j['disputedByName'] ?? ''
@@ -39,13 +38,12 @@ class PaymentRepositoryImpl implements PaymentRepository {
             'balanceAfter': p.balanceAfter,
             'collectedById': p.collectedById,
             'collectedByName': p.collectedByName,
-            'deliveryCode': p.deliveryCode,
             'signature': p.signature,
             'signedName': p.signedName,
+            if (p.autoConfirmed) 'autoConfirmed': true,
             'phoneConfirmedAt': _ms(p.phoneConfirmedAt),
             'phoneConfirmedByName': p.phoneConfirmedByName,
             'disputedByName': p.disputedByName,
-            'customerConfirmedAt': _ms(p.customerConfirmedAt),
             'disputedAt': _ms(p.disputedAt),
             'disputeNote': p.disputeNote,
             'settledAt': _ms(p.settledAt),
@@ -71,9 +69,9 @@ class PaymentRepositoryImpl implements PaymentRepository {
               balanceAfter: toDouble(j['balanceAfter']),
               collectedById: j['collectedById'] ?? '',
               collectedByName: j['collectedByName'] ?? '',
-              deliveryCode: j['deliveryCode'],
               signature: j['signature'],
               signedName: j['signedName'] ?? '',
+              autoConfirmed: j['autoConfirmed'] == true,
             );
             _mergePayment(p, j);
             return p;

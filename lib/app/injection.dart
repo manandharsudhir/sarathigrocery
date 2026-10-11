@@ -1,6 +1,10 @@
 import 'package:sarathigrocery/app/sample_data.dart';
 import 'package:sarathigrocery/core/data/remote_store.dart';
 import 'package:sarathigrocery/core/data/write_queue.dart';
+import 'package:sarathigrocery/features/accounting/data/repositories/journal_repository_impl.dart';
+import 'package:sarathigrocery/features/accounting/domain/books.dart';
+import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
+import 'package:sarathigrocery/features/accounting/presentation/controllers/accounting_controller.dart';
 import 'package:sarathigrocery/features/audit/data/repositories/audit_repository_impl.dart';
 import 'package:sarathigrocery/features/audit/domain/repositories/audit_repository.dart';
 import 'package:sarathigrocery/features/auth/data/repositories/user_repository_impl.dart';
@@ -28,9 +32,12 @@ import 'package:sarathigrocery/features/ordering/data/repositories/order_reposit
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
 import 'package:sarathigrocery/features/purchasing/data/repositories/purchase_repository_impl.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
+import 'package:sarathigrocery/features/sales/data/bill_numbers.dart';
 import 'package:sarathigrocery/features/sales/data/repositories/sale_repository_impl.dart';
+import 'package:sarathigrocery/features/sales/domain/entities/vat.dart';
 import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
 import 'package:sarathigrocery/features/settings/data/repositories/settings_repository_impl.dart';
+import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
 import 'package:sarathigrocery/features/settings/presentation/controllers/settings_controller.dart';
 import 'package:sarathigrocery/features/suppliers/data/repositories/supplier_repository_impl.dart';
 import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
@@ -42,13 +49,18 @@ import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppl
 /// The backend is chosen here and nowhere else: pass a [RemoteStore] +
 /// [AuthRepository] pair (Firebase in `main.dart`; in-memory by default,
 /// which is what tests use). Migrating to your own backend = implementing
-/// those two interfaces and passing them in.
+/// those two interfaces and passing them in. Every shop's data lives under
+/// `shops/{shopId}/`; [ShopScopedStore] adds that prefix, so nothing above
+/// it knows about shops except login, setup and reset.
 class AppScope {
   factory AppScope({RemoteStore? store, AuthRepository? authRepository}) {
-    final writes = WriteQueue(store ?? InMemoryRemoteStore());
+    final backend = store ?? InMemoryRemoteStore();
+    final shopStore = ShopScopedStore(backend);
+    void useShop(String shopId) => shopStore.shopId = shopId;
+    final writes = WriteQueue(shopStore);
     final authRepo = authRepository ?? InMemoryAuthRepository();
 
-    final userRepository = UserRepositoryImpl();
+    final userRepository = UserRepositoryImpl(() => shopStore.shopId);
     final productRepository = ProductRepositoryImpl();
     final customerRepository = CustomerRepositoryImpl();
     final supplierRepository = SupplierRepositoryImpl();
@@ -60,6 +72,9 @@ class AppScope {
     final notificationRepository = NotificationRepositoryImpl();
     final settingsRepository = SettingsRepositoryImpl();
     final paymentRepository = PaymentRepositoryImpl(customerRepository);
+    final journalRepository = JournalRepositoryImpl();
+    final billNumbers = BillNumbers(shopStore.get);
+    final books = Books(journalRepository, () => settingsRepository.current);
 
     final collections = {
       for (final c in [
@@ -75,6 +90,8 @@ class AppScope {
         ...notificationRepository.collections,
         ...settingsRepository.collections,
         ...paymentRepository.collections,
+        ...journalRepository.collections,
+        ...billNumbers.collections,
       ])
         c.name: c..bind(writes),
     };
@@ -83,53 +100,105 @@ class AppScope {
       await Future.wait([
         for (final entry in _loadPlan(user).entries) collections[entry.key]!.attach(id: entry.value.id, where: entry.value.where),
       ]);
-      // One-off fixes for data written by older app versions.
-      if (user.role == UserRole.owner) productRepository.migrateLegacyCosts();
+      // Delivery devices can't see costs: staff book the cost of what they invoiced.
+      if (user.role != UserRole.delivery) books.postMissingCosts(saleRepository.sales);
     }
 
     void disconnect() {
       for (final c in collections.values) {
         c.detach();
       }
-      orderRepository.clearCart(); // next login on this device shouldn't inherit it
     }
 
-    // Owner "reset everything": deletes every document the backend holds.
-    // The owner's profile + setup marker go last, in their own commit, so
-    // the owner stays authorized for all earlier deletes. Online-only; a
-    // failure part-way leaves the rest for a re-run.
-    Future<void> wipeBackend(AppUser owner) async {
-      final store = writes.store;
-      final targets = <String, List<String>>{};
-      for (final name in collections.keys) {
-        if (name == 'meta' || name == 'deliveryCodes') continue;
-        targets[name] = await store.listIds(name);
+    // Owner "reset" of [shopId] (and account deletion, for each shop the
+    // owner owns): deletes that shop's subtree, never other shops.
+    // The owner's profile, the shop doc and the owner's account entry go
+    // last, in their own commit, so the owner stays authorized for all
+    // earlier deletes (and the shop id stays taken until nothing is left
+    // under it). Online-only; a failure part-way leaves the rest for a re-run.
+    // Staff accounts keep a stale entry for the shop; login skips it.
+    Future<void> wipeShop(String ownerId, String shopId) async {
+      final current = shopStore.shopId;
+      useShop(shopId);
+      try {
+        final targets = <String, List<String>>{};
+        for (final name in collections.keys) {
+          if (ShopScopedStore.global.contains(name)) continue;
+          targets[name] = await shopStore.listIds(name);
+        }
+        for (final entry in targets.entries) {
+          for (final id in entry.value) {
+            if (entry.key == 'users' && id == ownerId) continue;
+            writes.enqueue(DeleteOp(entry.key, id));
+          }
+        }
+        await writes.flush(requireOnline: true);
+        final ownerShops = await userRepository.shopIdsOf(ownerId);
+        writes
+          ..enqueue(DeleteOp('users', ownerId))
+          ..enqueue(DeleteOp('shops', shopId));
+        userRepository.setShopIds(ownerId, ownerShops..remove(shopId));
+        await writes.flush(requireOnline: true);
+      } finally {
+        shopStore.shopId = current;
       }
-      // Delivery codes are unreadable to the owner by design; delete by order id.
-      targets['deliveryCodes'] = targets['orders'] ?? const [];
-      for (final entry in targets.entries) {
-        for (final id in entry.value) {
-          if (entry.key == 'users' && id == owner.id) continue;
-          writes.enqueue(DeleteOp(entry.key, id));
+    }
+
+    Future<String> shopName(String shopId) async =>
+        (await backend.get('shops/$shopId/settings', 'business'))?['businessName'] as String? ?? shopId;
+
+    // This login's shops (stale entries skipped), read straight from the
+    // backend because they span shops.
+    // `owner` = founding owner (the only one whose leaving erases the shop).
+    Future<List<({String id, bool owner})>> memberships(String uid) async => [
+          for (final id in await userRepository.shopIdsOf(uid))
+            if (await backend.get('shops/$id/users', uid) != null) (id: id, owner: (await backend.get('shops', id))?['ownerId'] == uid),
+        ];
+
+    // Account deletion: wipes every shop [me] founded, anonymises their
+    // profile in the others (kept so records' user ids still resolve), then
+    // deletes their emails/accounts docs. Online-only. The login itself is
+    // deleted afterwards by AuthController. A founder with active co-owners
+    // must hand the shop over first, so it isn't wiped under them.
+    Future<void> deleteAccountData(AppUser me) async {
+      final anonymise = <WriteOp>[];
+      final mine = await memberships(me.id);
+      for (final m in mine.where((m) => m.owner)) {
+        for (final uid in await backend.listIds('shops/${m.id}/users')) {
+          final p = await backend.get('shops/${m.id}/users', uid);
+          if (uid != me.id && p?['role'] == UserRole.owner.name && p?['active'] == true) {
+            throw AuthException('${await shopName(m.id)} has co-owners. Hand the founding owner role to one of them first (Employees).');
+          }
         }
       }
-      await writes.flush(requireOnline: true);
-      writes
-        ..enqueue(DeleteOp('users', owner.id))
-        ..enqueue(const DeleteOp('meta', 'setup'));
-      await writes.flush(requireOnline: true);
+      for (final m in mine) {
+        if (m.owner) {
+          await wipeShop(me.id, m.id);
+        } else {
+          anonymise.add(PutOp('shops/${m.id}/users', me.id, {'name': kFormerStaffName, 'phone': '', 'email': '', 'active': false}));
+        }
+      }
+      await backend.commit([...anonymise, DeleteOp('emails', me.email), DeleteOp('accounts', me.id)], requireOnline: true);
     }
+
 
     final setUpBusiness = SetUpBusiness(
       userRepository,
       authRepo,
       settingsRepository,
       commit: writes.flush,
-      writeSampleData: () => writeSampleData(writes),
+      writeSampleData: () => writeSampleData(writes, capital: books.capitalSplit),
+      useShop: useShop,
     );
 
-    final settlePayment = SettlePayment(paymentRepository, cashRepository, auditRepository, notificationRepository);
-    final recordPayment = RecordPayment(customerRepository, paymentRepository, userRepository, auditRepository, notificationRepository, settlePayment);
+    bool guards(Safeguard g) => settingsRepository.current.guards(g);
+    List<String> moneyAccounts() => moneyAccountIds(settingsRepository.current.moneyAccounts);
+    VatTerms? vatTerms() {
+      final s = settingsRepository.current;
+      return s.vatRegistered ? (rate: s.taxPercent > 0 ? s.taxPercent : 13, included: s.pricesIncludeVat) : null;
+    }
+    final settlePayment = SettlePayment(paymentRepository, cashRepository, auditRepository, notificationRepository, guards, books);
+    final recordPayment = RecordPayment(customerRepository, paymentRepository, auditRepository, notificationRepository, settlePayment, guards, books);
 
     final payments = PaymentsController(
       paymentRepository,
@@ -137,22 +206,29 @@ class AppScope {
       recordPayment,
       settlePayment,
       RespondToPayment(paymentRepository, auditRepository, notificationRepository),
-      ReversePayment(customerRepository, paymentRepository, cashRepository, userRepository, auditRepository, notificationRepository),
+      ReversePayment(customerRepository, paymentRepository, cashRepository, auditRepository, books),
       () => settingsRepository.current.businessName,
     );
 
+    // Filled in below; settings asks it who the founding owner is.
+    late final AuthController auth;
+    bool founder() => auth.isFounder;
+
     return AppScope._(
-      auth: AuthController(userRepository, authRepo, setUpBusiness, connect: connect, disconnect: disconnect),
-      inventory: InventoryController(productRepository, auditRepository, notificationRepository),
-      customers: CustomersController(customerRepository, auditRepository, userRepository, authRepo, payments, notificationRepository),
+      auth: auth = AuthController(userRepository, authRepo, setUpBusiness, connect: connect, disconnect: disconnect, useShop: useShop, shopName: shopName,
+          ownedShopNames: (uid) async => [for (final m in await memberships(uid)) if (m.owner) await shopName(m.id)],
+          deleteAccountData: deleteAccountData, flush: writes.flush),
+      inventory: InventoryController(productRepository, auditRepository, notificationRepository, books),
+      customers: CustomersController(customerRepository, auditRepository, payments, notificationRepository, books),
       payments: payments,
-      suppliers: SuppliersController(supplierRepository, auditRepository, cashRepository),
-      sales: SalesController(saleRepository, productRepository, customerRepository, cashRepository, auditRepository, notificationRepository),
-      purchasing: PurchasingController(purchaseRepository, productRepository, supplierRepository, cashRepository, auditRepository, notificationRepository),
-      cash: CashController(cashRepository),
-      ordering: OrderingController(orderRepository, productRepository, saleRepository, customerRepository, auditRepository, notificationRepository, userRepository, recordPayment, paymentRepository, writes.flush, () => settingsRepository.current.businessName),
+      suppliers: SuppliersController(supplierRepository, auditRepository, cashRepository, books),
+      sales: SalesController(saleRepository, productRepository, customerRepository, cashRepository, auditRepository, notificationRepository, () => settingsRepository.current.businessName, books, moneyAccounts: moneyAccounts, vat: vatTerms, billNumbers: billNumbers, commit: writes.flush, settings: () => settingsRepository.current),
+      purchasing: PurchasingController(purchaseRepository, productRepository, supplierRepository, cashRepository, auditRepository, notificationRepository, books, moneyAccounts: moneyAccounts, vatShop: () => settingsRepository.current.vatRegistered, margin: () => settingsRepository.current.marginPercent),
+      cash: CashController(cashRepository, books, auditRepository, () => settingsRepository.current),
+      accounting: AccountingController(books, cashRepository, customerRepository, supplierRepository, productRepository, paymentRepository, saleRepository, settingsRepository, auditRepository),
+      ordering: OrderingController(orderRepository, productRepository, saleRepository, customerRepository, auditRepository, notificationRepository, userRepository, recordPayment, paymentRepository, writes.flush, () => settingsRepository.current.businessName, guards, books, vat: vatTerms, billNumbers: billNumbers),
       employees: EmployeesController(userRepository, authRepo, auditRepository),
-      settings: SettingsController(settingsRepository, authRepo, wipeBackend),
+      settings: SettingsController(settingsRepository, authRepo, (owner) => wipeShop(owner.id, shopStore.shopId!), isFounder: () => founder()),
       auditRepository: auditRepository,
       notificationRepository: notificationRepository,
     );
@@ -164,18 +240,16 @@ class AppScope {
   /// - Staff see the whole business (audit log: owner only).
   /// - Delivery staff see the catalogue, customers (address, balance), and
   ///   only the orders assigned to them and payments they collected.
-  /// - A customer sees the catalogue plus their own profile, account,
-  ///   bills, payments, orders, delivery codes and notifications.
   static Map<String, ({String? id, Map<String, Object?> where})> _loadPlan(AppUser user) {
     const all = (id: null, where: <String, Object?>{});
     final own = (id: user.id, where: const <String, Object?>{});
     final mine = (id: null, where: <String, Object?>{'targetUserId': user.id});
     switch (user.role) {
-      case UserRole.owner || UserRole.accountant || UserRole.employee:
+      case UserRole.owner || UserRole.employee:
         return {
           for (final name in [
             'users', 'products', 'productCosts', 'categories', 'stockAdjustments', 'customers', 'suppliers', 'cashLedger', 'expenses',
-            'partnerLedger', 'sales', 'purchases', 'purchaseReturns', 'orders', 'notifications', 'settings', 'customerPayments',
+            'journal', 'creditNotes', 'sales', 'purchases', 'purchaseReturns', 'orders', 'notifications', 'settings', 'customerPayments',
             if (user.role == UserRole.owner) 'auditLog',
           ])
             name: all,
@@ -191,20 +265,6 @@ class AppScope {
           'customerPayments': (id: null, where: {'collectedById': user.id}),
           'notifications': mine,
         };
-      case UserRole.customer:
-        final ofCustomer = (id: null, where: <String, Object?>{'customerId': user.linkedCustomerId ?? ''});
-        return {
-          'products': all,
-          'categories': all,
-          'settings': all,
-          'users': own,
-          'customers': (id: user.linkedCustomerId ?? '', where: const {}),
-          'orders': ofCustomer,
-          'sales': ofCustomer,
-          'customerPayments': ofCustomer,
-          'deliveryCodes': ofCustomer,
-          'notifications': mine,
-        };
     }
   }
 
@@ -217,6 +277,7 @@ class AppScope {
     required this.sales,
     required this.purchasing,
     required this.cash,
+    required this.accounting,
     required this.ordering,
     required this.employees,
     required this.settings,
@@ -232,6 +293,7 @@ class AppScope {
   final SalesController sales;
   final PurchasingController purchasing;
   final CashController cash;
+  final AccountingController accounting;
   final OrderingController ordering;
   final EmployeesController employees;
   final SettingsController settings;

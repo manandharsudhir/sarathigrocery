@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:sarathigrocery/features/auth/domain/entities/app_user.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/auth_repository.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 
@@ -26,33 +27,50 @@ Future<void> showChangePasswordDialog(BuildContext context, AuthController auth)
   );
 }
 
-/// Sends an OTP to the user's own number and links it to their login,
-/// which is what makes OTP password reset possible later.
-Future<void> showVerifyPhoneDialog(BuildContext context, AuthController auth) {
-  final code = TextEditingController();
-  String? verificationId;
+/// Play Store account deletion. Shops this login owns are deleted with it
+/// (listed, and the first one's name must be typed); [onExport] offers a
+/// data export first. Ends signed out on the login screen.
+Future<void> showDeleteAccountDialog(BuildContext context, AuthController auth, {Future<void> Function()? onExport}) async {
+  final List<String> owned;
+  try {
+    owned = await auth.ownedShopNames();
+  } catch (_) {
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No internet connection. Connect and try again.')));
+    return;
+  }
+  if (!context.mounted) return;
+  final name = TextEditingController();
+  final password = TextEditingController();
+  final navigator = Navigator.of(context);
   return showDialog(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) => _AsyncFormDialog(
-        title: 'Verify ${auth.currentUser!.phone}',
-        actionLabel: verificationId == null ? 'Send Code' : 'Verify',
-        fields: [
-          if (verificationId == null)
-            const Text('We will text a one-time code to this number. Once verified, you can reset a forgotten password by SMS.')
-          else
-            TextField(controller: code, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '6-digit code')),
+    builder: (context) => _AsyncFormDialog(
+      title: owned.isEmpty ? 'Delete your account?' : 'Delete shop and account?',
+      actionLabel: 'Delete for good',
+      fields: [
+        if (owned.isEmpty)
+          const Text('Your login is deleted. In each shop you work for, your profile becomes "$kFormerStaffName" and is switched off. '
+              'The shop keeps its records (sales, payments), which still show your name.')
+        else ...[
+          Text('This permanently deletes, for everyone, ${owned.length == 1 ? 'the shop' : 'these shops'}: ${owned.join(', ')} — '
+              'customers and balances, sales, payments, ledgers, stock and staff profiles — and then your login. '
+              'There is no backup and no undo.'),
+          if (onExport != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(icon: const Icon(Icons.download_outlined), label: const Text('Export this shop first'), onPressed: onExport),
+            ),
+          const SizedBox(height: 8),
+          Text('Type "${owned.first}" to confirm:'),
+          TextField(controller: name),
         ],
-        onSubmit: () async {
-          if (verificationId == null) {
-            final id = await auth.startPhoneVerification();
-            setState(() => verificationId = id);
-            return null;
-          }
-          await auth.completePhoneVerification(verificationId!, code.text.trim());
-          return 'Phone verified.';
-        },
-      ),
+        TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'Your password')),
+      ],
+      onSubmit: () async {
+        await auth.deleteAccount(password: password.text, typedShopName: name.text);
+        navigator.popUntil((route) => route.isFirst);
+        return null;
+      },
     ),
   );
 }
@@ -101,15 +119,18 @@ class _AsyncFormDialogState extends State<_AsyncFormDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ...widget.fields,
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ...widget.fields,
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+            if (_busy) const Padding(padding: EdgeInsets.only(top: 16), child: LinearProgressIndicator()),
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(onPressed: _busy ? null : () => Navigator.pop(context), child: const Text('Cancel')),

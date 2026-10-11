@@ -1,21 +1,20 @@
-import 'dart:math';
-
 import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/audit/domain/repositories/audit_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product_pack.dart';
 import 'package:sarathigrocery/features/inventory/domain/repositories/product_repository.dart';
 import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/customer_order.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/delivery_type.dart';
-import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
+import 'package:sarathigrocery/features/ordering/domain/entities/order_item.dart';
 import 'package:sarathigrocery/features/ordering/domain/repositories/order_repository.dart';
+import 'package:sarathigrocery/features/sales/domain/entities/vat.dart';
+import 'package:sarathigrocery/features/sales/domain/usecases/record_sale.dart';
 
-final _codeRandom = Random.secure();
-
-/// Places an order from the current cart: reserves stock (without touching
-/// [Product.stockQty] yet — final deduction happens on delivery), issues a
-/// secret delivery code for the customer, flags it if it would take the
-/// customer past their credit limit, audits, and notifies owner + employee.
+/// Staff take an order for a customer (phone/WhatsApp/in person): reserves
+/// stock (without touching [Product.stockQty] yet — final deduction happens
+/// on delivery), audits, and notifies owner + employee. An order is not debt,
+/// so the credit limit is checked only on delivery ([AdvanceOrderStatus]).
 class PlaceOrder {
   PlaceOrder(this._orders, this._products, this._audit, this._notifications);
 
@@ -24,48 +23,41 @@ class PlaceOrder {
   final AuditRepository _audit;
   final NotificationRepository _notifications;
 
-  /// Balance + undelivered orders — what the customer would owe if every
-  /// open order were delivered on credit.
-  double creditExposure(Customer customer) =>
-      customer.outstandingBalance +
-      _orders.orders
-          .where((o) => o.customer.id == customer.id && o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled)
-          .fold(0.0, (sum, o) => sum + o.total);
+  /// Prices are fixed now. Throws [BelowMinimumPriceException] for a line
+  /// under its minimum price unless [allowBelowMinimum].
+  CustomerOrder? call(Customer customer, List<OrderItem> items,
+      {required DeliveryType deliveryType, String address = '', String notes = '', required String staffName, bool allowBelowMinimum = false, VatTerms? vat}) {
+    if (items.isEmpty) return null;
+    final unpriced = {for (final i in items) if (i.product.isUnpriced(i.unit)) i.product.name};
+    if (unpriced.isNotEmpty) throw UnpricedProductException(unpriced.toList());
+    final below = [for (final i in items) if (i.product.isBelowMinimum(i.unit, i.price)) i];
+    if (below.isNotEmpty && !allowBelowMinimum) throw BelowMinimumPriceException([for (final i in below) '${i.product.name} (${i.unit})']);
 
-  /// [staffName]: staff placing it for the customer (phone/WhatsApp order).
-  /// Then no delivery code is issued — the staff member would know it — and
-  /// the customer confirms by app, signature or phone call instead.
-  /// [userId] is always the customer's own login (for their notifications).
-  CustomerOrder? call(Customer customer, {required DeliveryType deliveryType, String address = '', String notes = '', required String userName, String? userId, String? staffName}) {
-    if (_orders.cart.isEmpty) return null;
-
-    final subtotal = _orders.cart.fold(0.0, (sum, i) => sum + i.lineTotal);
-    final total = subtotal - subtotal * customer.defaultDiscountPercent / 100;
-    final overLimit = creditExposure(customer) + total > customer.creditLimit;
+    final lines = items.fold(0.0, (sum, i) => sum + i.lineTotal);
+    final exempt = items.where((i) => i.product.vatExempt).fold(0.0, (sum, i) => sum + i.lineTotal);
+    final vatAmount = vatOn(lines - exempt, vat);
 
     final order = _orders.createOrder(
       customer: customer,
-      items: List.of(_orders.cart),
-      discountPercent: customer.defaultDiscountPercent,
+      items: items,
       deliveryType: deliveryType,
       address: address,
       notes: notes,
-      placedByUserId: userId,
-      overCreditLimit: overLimit,
-      placedByStaffName: staffName ?? '',
+      placedByStaffName: staffName,
+      vatAmount: vatAmount,
+      vatIncluded: vat?.included ?? true,
+      exemptAmount: vat == null ? 0 : exempt,
     );
-    if (staffName == null) _orders.saveDeliveryCode(order, _codeRandom.nextInt(1000000).toString().padLeft(6, '0'));
 
     for (final item in order.items) {
-      _products.reserveStock(item.product, item.qty);
+      _products.reserveStock(item.product, item.baseQty);
     }
-    _orders.clearCart();
 
-    _audit.record(userName, 'Order placed', 'Order', entityId: order.id, newValue: order.total.toStringAsFixed(0));
-    final by = staffName == null ? customer.name : '$staffName for ${customer.name}';
-    final note = overLimit ? ' — over credit limit, needs approval' : '';
-    _notifications.notify('New order', 'Order ${order.id} placed by $by$note', role: UserRole.owner);
-    _notifications.notify('New order', 'Order ${order.id} placed by $by$note', role: UserRole.employee);
+    _audit.record(staffName, 'Order placed', 'Order', entityId: order.id, newValue: order.total.toStringAsFixed(0));
+    auditBelowMinimum(_audit, _notifications, staffName, 'Order', order.id, [for (final i in below) (product: i.product.name, unit: i.unit, price: i.price, minimum: i.product.floorFor(i.unit) ?? 0)]);
+    final message = 'Order ${order.id} placed by $staffName for ${customer.name}';
+    _notifications.notify('New order', message, role: UserRole.owner);
+    _notifications.notify('New order', message, role: UserRole.employee);
 
     return order;
   }

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/core/widgets/empty_state.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
-import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
@@ -38,20 +38,22 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
             .toList()
             .reversed
             .toList();
+        final canOrder = widget.customers != null && widget.inventory != null && widget.auth.can(Permission.createSales);
+        void newOrder() => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => StaffNewOrderScreen(ordering: widget.controller, customers: widget.customers!, inventory: widget.inventory!, auth: widget.auth),
+              ),
+            );
 
         return Scaffold(
           appBar: AppBar(title: const Text('Orders')),
-          floatingActionButton: widget.customers != null && widget.inventory != null && widget.auth.can(Permission.createSales)
+          floatingActionButton: canOrder
               ? FloatingActionButton.extended(
                   heroTag: null,
                   icon: const Icon(Icons.add_call),
                   label: const Text('New Order'),
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => StaffNewOrderScreen(ordering: widget.controller, customers: widget.customers!, inventory: widget.inventory!, auth: widget.auth),
-                    ),
-                  ),
+                  onPressed: newOrder,
                 )
               : null,
           body: Column(
@@ -75,7 +77,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
               ),
               Expanded(
                 child: orders.isEmpty
-                    ? const Center(child: Text('No orders here.'))
+                    ? EmptyState(message: 'No orders here.', actionLabel: 'New order', onAction: canOrder && _filter == null ? newOrder : null)
                     : ListView.separated(
                         padding: const EdgeInsets.all(16),
                         itemCount: orders.length,
@@ -88,7 +90,6 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                             subtitle: Text([
                               '${order.id} · ${formatDate(order.createdDate)}',
                               if (order.assignedToName.isNotEmpty) 'Delivery: ${order.assignedToName}',
-                              if (order.overCreditLimit && order.status != OrderStatus.delivered) 'Over credit limit',
                               orderPaymentSummary(order, widget.controller.paymentsFor(order)),
                             ].where((s) => s.isNotEmpty).join(' · ')),
                             trailing: Column(
@@ -106,7 +107,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                                   order: order,
                                   controller: widget.controller,
                                   auth: widget.auth,
-                                  staffView: widget.auth.currentUser?.role != UserRole.accountant,
+                                  staffView: true,
                                 ),
                               ),
                             ),

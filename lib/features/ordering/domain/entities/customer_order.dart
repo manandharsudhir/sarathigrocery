@@ -9,25 +9,24 @@ class CustomerOrder {
     required this.customer,
     required this.items,
     required this.deliveryType,
-    this.discountPercent = 0,
     this.address = '',
     this.notes = '',
     this.status = OrderStatus.placed,
     required this.createdDate,
     required this.updatedDate,
-    this.placedByUserId,
     this.assignedToId,
     this.assignedToName = '',
-    this.overCreditLimit = false,
     this.placedByStaffName = '',
     this.receivedSignature,
     this.receivedBy = '',
+    this.vatAmount = 0,
+    this.vatIncluded = true,
+    this.exemptAmount = 0,
   });
 
   final String id;
   final Customer customer;
   final List<OrderItem> items;
-  final double discountPercent;
   final DeliveryType deliveryType;
   final String address;
   final String notes;
@@ -35,24 +34,22 @@ class CustomerOrder {
   final DateTime createdDate;
   DateTime updatedDate;
 
-  /// The customer login that placed it — who gets status/receipt notices.
-  final String? placedByUserId;
-
   /// Who delivers it (a delivery-role user, or any staff with deliverOrders).
   String? assignedToId;
   String assignedToName;
 
-  /// Outstanding balance + open orders + this one exceeded the credit limit
-  /// when placed; staff decide whether to deliver on credit.
-  final bool overCreditLimit;
-
-  /// Set when staff placed it for the customer (phone/WhatsApp order).
+  /// The staff member who took the order (phone/WhatsApp/in person).
   final String placedByStaffName;
 
   /// Customer's signature and name when the goods were handed over.
   String? receivedSignature;
   String receivedBy;
 
-  double get subtotal => items.fold(0.0, (sum, i) => sum + i.lineTotal);
-  double get total => subtotal - subtotal * discountPercent / 100;
+  /// VAT worked out when the order was placed (prices are fixed then).
+  final double vatAmount;
+  final bool vatIncluded;
+  final double exemptAmount;
+
+  double get linesTotal => items.fold(0.0, (sum, i) => sum + i.lineTotal);
+  double get total => linesTotal + (vatIncluded ? 0 : vatAmount);
 }

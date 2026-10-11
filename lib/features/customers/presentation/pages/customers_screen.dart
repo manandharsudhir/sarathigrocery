@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/core/widgets/empty_state.dart';
 import 'package:sarathigrocery/core/widgets/status_badge.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
@@ -20,20 +21,21 @@ class CustomersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canAdd = auth.can(Permission.manageCustomers) || auth.can(Permission.createCustomers);
+    void add() => showCustomerFormSheet(context, controller, auth);
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) => Scaffold(
         appBar: AppBar(title: const Text('Customers & Udharo')),
-        floatingActionButton: auth.can(Permission.manageCustomers) || auth.can(Permission.createCustomers)
+        floatingActionButton: canAdd
             ? FloatingActionButton.extended(heroTag: null, 
-                onPressed: () =>
-                    showCustomerFormSheet(context, controller, auth),
+                onPressed: add,
                 icon: const Icon(Icons.person_add_alt),
                 label: const Text('Add Customer'),
               )
             : null,
         body: controller.customers.isEmpty
-            ? const Center(child: Text('No customers yet.'))
+            ? EmptyState(message: 'No customers yet.', actionLabel: 'Add customer', onAction: canAdd ? add : null)
             : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
                 itemCount: controller.customers.length,

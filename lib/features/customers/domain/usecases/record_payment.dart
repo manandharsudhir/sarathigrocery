@@ -1,10 +1,10 @@
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/core/utils/id_generator.dart';
+import 'package:sarathigrocery/features/accounting/domain/books.dart';
 import 'package:sarathigrocery/features/audit/domain/repositories/audit_repository.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/app_user.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
-import 'package:sarathigrocery/features/auth/domain/repositories/user_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/domain/repositories/customer_repository.dart';
@@ -12,21 +12,25 @@ import 'package:sarathigrocery/features/customers/domain/repositories/payment_re
 import 'package:sarathigrocery/features/customers/domain/usecases/settle_payment.dart';
 import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/customer_order.dart';
+import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
 
 /// Records money a customer handed over — at the counter, or at the door
 /// against [order]. Reduces the balance immediately (the customer has
 /// paid), then the money is tracked until it reaches the till:
 /// collectors with `reconcileCash` settle on the spot; anyone else's
-/// collection waits for handover ([SettlePayment]).
+/// collection waits for handover ([SettlePayment]) — unless the shop's
+/// [Safeguard.handover] is off, when every collection settles on the spot.
+/// Unsigned payments need a phone check only with [Safeguard.phoneConfirm].
 class RecordPayment {
-  RecordPayment(this._customers, this._payments, this._users, this._audit, this._notifications, this._settle);
+  RecordPayment(this._customers, this._payments, this._audit, this._notifications, this._settle, this._guards, this._books);
 
   final CustomerRepository _customers;
   final PaymentRepository _payments;
-  final UserRepository _users;
   final AuditRepository _audit;
   final NotificationRepository _notifications;
   final SettlePayment _settle;
+  final bool Function(Safeguard) _guards;
+  final Books _books;
 
   CustomerPayment call(
     Customer customer,
@@ -34,7 +38,6 @@ class RecordPayment {
     required PaymentMethod method,
     String reference = '',
     CustomerOrder? order,
-    String? deliveryCode,
     String? signature,
     String signedName = '',
     required AppUser collector,
@@ -46,8 +49,6 @@ class RecordPayment {
     final atDoor = order != null && order.assignedToId == collector.id && collector.can(Permission.deliverOrders);
     if (!collector.can(Permission.recordPayments) && !atDoor) throw PaymentException('You are not allowed to record this payment.');
     if (order != null && order.customer.id != customer.id) throw PaymentException('That order belongs to another customer.');
-    final code = deliveryCode?.trim();
-    if (code != null && code.isNotEmpty && order == null) throw PaymentException('A delivery code only applies to an order.');
 
     final alreadyPaid = order == null
         ? 0.0
@@ -69,28 +70,19 @@ class RecordPayment {
       balanceAfter: customer.outstandingBalance,
       collectedById: collector.id,
       collectedByName: collector.name,
-      deliveryCode: code == null || code.isEmpty ? null : code,
       signature: signature,
       signedName: signedName.trim(),
+      autoConfirmed: signature == null && !_guards(Safeguard.phoneConfirm),
     );
     _payments.add(payment);
+    _books.paymentRecorded(payment);
 
     _audit.record(collector.name, 'Payment recorded', 'Customer', entityId: customer.id,
-        newValue: '${formatNpr(amount)} ${method.name}${order == null ? '' : ' for order ${order.id}'}${payment.confirmedByCode ? ' (code verified)' : ''}${payment.confirmedBySignature ? ' (signed)' : ''}');
+        newValue: '${formatNpr(amount)} ${method.name}${order == null ? '' : ' for order ${order.id}'}${payment.confirmedBySignature ? ' (signed)' : ''}');
 
-    final customerUserId = order?.placedByUserId ?? _users.userForCustomer(customer.id)?.id;
-    if (customerUserId != null) {
-      _notifications.notify(
-        'Receipt: ${formatNpr(amount)} received',
-        '${order == null ? '' : '${formatNpr(appliedToOrder)} for order ${order.id}, '}'
-            '${formatNpr(payment.appliedToPreviousBalance)} toward earlier balance. Balance now ${formatNpr(payment.balanceAfter)}.'
-            '${payment.isCustomerConfirmed ? '' : ' Please confirm or report a problem in My Account.'}',
-        userId: customerUserId,
-      );
-    }
     _notifications.notify('Payment collected', '${formatNpr(amount)} from ${customer.name} by ${collector.name}', role: UserRole.owner);
 
-    if (collector.can(Permission.reconcileCash)) _settle(payment, amount, receiver: collector, atCollection: true);
+    if (collector.can(Permission.reconcileCash) || !_guards(Safeguard.handover)) _settle(payment, amount, receiver: collector, atCollection: true);
     return payment;
   }
 }

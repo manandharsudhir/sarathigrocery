@@ -58,6 +58,7 @@ class SuppliersScreen extends StatelessWidget {
     final address = TextEditingController();
     final products = TextEditingController();
 
+    final pan = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -78,6 +79,7 @@ class SuppliersScreen extends StatelessWidget {
             TextField(controller: address, decoration: const InputDecoration(labelText: 'Address')),
             const SizedBox(height: 8),
             TextField(controller: products, decoration: const InputDecoration(labelText: 'Products supplied (optional)')),
+            TextField(controller: pan, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'PAN / VAT no. (optional)')),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -90,6 +92,7 @@ class SuppliersScreen extends StatelessWidget {
                     phone: phone.text.trim(),
                     address: address.text.trim(),
                     productsSupplied: products.text.trim(),
+                    pan: pan.text,
                   );
                   Navigator.pop(context);
                 },

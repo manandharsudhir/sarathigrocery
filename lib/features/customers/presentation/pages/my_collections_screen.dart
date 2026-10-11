@@ -33,7 +33,7 @@ class MyCollectionsScreen extends StatelessWidget {
                 color: Theme.of(context).colorScheme.primaryContainer,
                 child: ListTile(
                   title: const Text('Cash to hand over'),
-                  subtitle: Text('${holding.length} payment${holding.length == 1 ? '' : 's'} not yet received at the shop'),
+                  subtitle: Text('${holding.length} payment${holding.length == 1 ? '' : 's'} with you, not yet with the shop'),
                   trailing: Text(formatNpr(cash), style: Theme.of(context).textTheme.titleLarge),
                 ),
               ),
@@ -41,7 +41,7 @@ class MyCollectionsScreen extends StatelessWidget {
                 Card(
                   elevation: 0,
                   color: Theme.of(context).colorScheme.errorContainer,
-                  child: ListTile(leading: const Icon(Icons.warning_amber), title: Text('Shortfall recorded: ${formatNpr(shortfall)}')),
+                  child: ListTile(leading: const Icon(Icons.warning_amber), title: Text('Cash missing: ${formatNpr(shortfall)}')),
                 ),
               const SizedBox(height: 8),
               if (mine.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('No collections yet.'))),

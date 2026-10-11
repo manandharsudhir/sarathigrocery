@@ -13,16 +13,10 @@ class DashboardNav {
     this.openOrders,
     this.openSales,
     this.openCustomers,
-    this.openProducts,
-    this.openCart,
   });
 
   final VoidCallback? openInventory;
   final VoidCallback? openOrders;
   final VoidCallback? openSales;
   final VoidCallback? openCustomers;
-
-  /// Customer-facing product browsing (the staff equivalent is [openInventory]).
-  final VoidCallback? openProducts;
-  final VoidCallback? openCart;
 }

@@ -47,15 +47,18 @@ class FirestoreRemoteStore implements RemoteStore {
   /// write showing the final state.
   @override
   Future<void> commit(List<WriteOp> ops, {bool requireOnline = false}) {
-    final docs = <String, ({String collection, String id, Json data, Map<String, num> deltas, bool delete})>{};
+    final docs = <String, ({String collection, String id, Json data, Map<String, num> deltas, Map<String, List<Object?>> unions, bool delete})>{};
+    ({String collection, String id, Json data, Map<String, num> deltas, Map<String, List<Object?>> unions, bool delete}) fresh(WriteOp op, {bool delete = false}) =>
+        (collection: op.collection, id: op.id, data: <String, dynamic>{}, deltas: <String, num>{}, unions: <String, List<Object?>>{}, delete: delete);
     for (final op in ops) {
       final key = '${op.collection}/${op.id}';
-      final cur = docs[key] ?? (collection: op.collection, id: op.id, data: <String, dynamic>{}, deltas: <String, num>{}, delete: false);
+      final cur = docs[key] ?? fresh(op);
       switch (op) {
         case PutOp(:final data):
           cur.data.addAll(data);
           for (final field in data.keys) {
             cur.deltas.remove(field);
+            cur.unions.remove(field);
           }
         case IncrementOp(:final deltas):
           deltas.forEach((field, delta) {
@@ -66,18 +69,31 @@ class FirestoreRemoteStore implements RemoteStore {
               cur.deltas[field] = (cur.deltas[field] ?? 0) + delta;
             }
           });
+        case ArrayUnionOp(:final values):
+          values.forEach((field, add) {
+            final literal = cur.data[field];
+            if (literal is List) {
+              cur.data[field] = [...literal, for (final v in add) if (!literal.contains(v)) v];
+            } else {
+              cur.unions[field] = [...?cur.unions[field], ...add];
+            }
+          });
         case DeleteOp():
-          docs[key] = (collection: op.collection, id: op.id, data: <String, dynamic>{}, deltas: <String, num>{}, delete: true);
+          docs[key] = fresh(op, delete: true);
           continue;
       }
-      docs[key] = (collection: cur.collection, id: cur.id, data: cur.data, deltas: cur.deltas, delete: cur.delete);
+      docs[key] = cur;
     }
 
     final writes = [
       for (final d in docs.values)
         (
           ref: _db.collection(d.collection).doc(d.id),
-          data: {...d.data, for (final e in d.deltas.entries) e.key: FieldValue.increment(e.value)},
+          data: {
+            ...d.data,
+            for (final e in d.deltas.entries) e.key: FieldValue.increment(e.value),
+            for (final e in d.unions.entries) e.key: FieldValue.arrayUnion(e.value),
+          },
           delete: d.delete,
         ),
     ];

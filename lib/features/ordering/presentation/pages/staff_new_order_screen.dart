@@ -6,11 +6,14 @@ import 'package:sarathigrocery/features/customers/domain/entities/customer.dart'
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/pages/customer_form_sheet.dart';
-import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product_pack.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/delivery_type.dart';
+import 'package:sarathigrocery/features/ordering/domain/entities/order_item.dart';
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
-import 'package:sarathigrocery/features/sales/presentation/pages/new_sale_screen.dart';
+import 'package:sarathigrocery/features/sales/domain/entities/vat.dart';
+import 'package:sarathigrocery/features/sales/presentation/widgets/cart_editor.dart';
 
 /// Staff take an order for a customer — typically one who phoned or sent a
 /// WhatsApp message and may not have the app. It then follows the normal
@@ -32,23 +35,41 @@ class _StaffNewOrderScreenState extends State<StaffNewOrderScreen> {
   DeliveryType _deliveryType = DeliveryType.delivery;
   final _address = TextEditingController();
   final _notes = TextEditingController();
-  final Map<Product, int> _items = {};
+  final List<CartLine> _lines = [];
+  String? _error;
 
-  double get _subtotal => _items.entries.fold(0.0, (sum, e) => sum + e.key.unitPrice * e.value);
+  bool get _allowBelowMinimum => widget.auth.can(Permission.sellBelowMinimum);
+
+  double get _total {
+    final lines = _lines.fold(0.0, (sum, l) => sum + l.total);
+    final terms = widget.ordering.vatTerms;
+    final vat = vatOn(_lines.where((l) => !l.product.vatExempt).fold(0.0, (sum, l) => sum + l.total), terms);
+    return lines + (terms != null && !terms.included ? vat : 0);
+  }
 
   void _place() {
     final customer = _customer!;
+    final problem = cartProblem(_lines, checkMinimum: true, allowBelowMinimum: _allowBelowMinimum, checkStock: true);
+    if (problem != null) {
+      setState(() => _error = problem);
+      return;
+    }
+    final items = [for (final l in _lines) OrderItem(product: l.product, qty: l.qtyValue, price: l.priceValue, unit: l.unit.label, size: l.unit.size)];
     try {
-      final order = widget.ordering.placeOrderFor(customer, _items,
+      final order = widget.ordering.placeOrderFor(customer, items,
           deliveryType: _deliveryType, address: _address.text.trim(), notes: _notes.text.trim(), staff: widget.auth.currentUser!);
       if (order == null) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Order ${order.id} placed for ${customer.name} (${formatNpr(order.total)})'
-            '${order.overCreditLimit ? ' — over credit limit' : ''}'),
+            ''),
       ));
     } on PaymentException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } on BelowMinimumPriceException catch (e) {
+      setState(() => _error = e.message);
+    } on UnpricedProductException catch (e) {
+      setState(() => _error = e.message);
     }
   }
 
@@ -57,7 +78,6 @@ class _StaffNewOrderScreenState extends State<StaffNewOrderScreen> {
     return ListenableBuilder(
       listenable: Listenable.merge([widget.customers, widget.inventory]),
       builder: (context, _) {
-        final products = widget.inventory.products.where((p) => p.isActive).toList();
         final customer = _customer;
         return Scaffold(
           appBar: AppBar(title: const Text('New Order for Customer')),
@@ -66,11 +86,14 @@ class _StaffNewOrderScreenState extends State<StaffNewOrderScreen> {
             children: [
               Row(children: [
                 Expanded(
-                  child: DropdownButtonFormField<Customer>(
-                    initialValue: customer,
-                    decoration: const InputDecoration(labelText: 'Customer'),
-                    items: [for (final c in widget.customers.customers) DropdownMenuItem(value: c, child: Text(c.name))],
-                    onChanged: (c) => setState(() {
+                  child: DropdownMenu<Customer>(
+                    initialSelection: customer,
+                    label: const Text('Customer'),
+                    expandedInsets: EdgeInsets.zero,
+                    enableFilter: true,
+                    requestFocusOnTap: true,
+                    dropdownMenuEntries: [for (final c in widget.customers.customers) DropdownMenuEntry(value: c, label: c.name)],
+                    onSelected: (c) => setState(() {
                       _customer = c;
                       if (_address.text.isEmpty && c != null) _address.text = c.location;
                     }),
@@ -86,8 +109,7 @@ class _StaffNewOrderScreenState extends State<StaffNewOrderScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    'Balance ${formatNpr(customer.outstandingBalance)} of ${formatNpr(customer.creditLimit)} limit · '
-                    '${customer.hasAppLogin ? 'uses the app' : 'no app — will sign on delivery'}',
+                    'Balance ${formatNpr(customer.outstandingBalance)} of ${formatNpr(customer.creditLimit)} limit',
                   ),
                 ),
               const SizedBox(height: 12),
@@ -103,20 +125,26 @@ class _StaffNewOrderScreenState extends State<StaffNewOrderScreen> {
               TextField(controller: _notes, decoration: const InputDecoration(labelText: 'Notes (e.g. "ordered by phone")')),
               const SizedBox(height: 16),
               Text('Items', style: Theme.of(context).textTheme.titleMedium),
-              for (final p in products)
-                ProductQtyRow(
-                  product: p,
-                  qty: _items[p] ?? 0,
-                  onChanged: (qty) => setState(() => qty <= 0 ? _items.remove(p) : _items[p] = qty),
-                ),
+              const SizedBox(height: 8),
+              CartEditor(
+                products: widget.inventory.products.where((p) => p.isActive).toList(),
+                lines: _lines,
+                onChanged: () => setState(() => _error = null),
+                priceFor: (p, unit) => p.floorFor(unit.label) ?? 0,
+                allowBelowMinimum: _allowBelowMinimum,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              ],
             ],
           ),
           bottomNavigationBar: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: FilledButton(
-                onPressed: customer == null || _items.isEmpty ? null : _place,
-                child: Text('Place Order · ${formatNpr(_subtotal - _subtotal * (customer?.defaultDiscountPercent ?? 0) / 100)}'),
+                onPressed: customer == null || _lines.isEmpty ? null : _place,
+                child: Text('Place Order · ${formatNpr(_total)}'),
               ),
             ),
           ),

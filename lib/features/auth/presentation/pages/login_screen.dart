@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:sarathigrocery/app/app.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/auth/presentation/pages/forgot_password_screen.dart';
 import 'package:sarathigrocery/features/auth/presentation/pages/setup_screen.dart';
@@ -14,11 +15,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   void _submit() {
-    widget.auth.login(_phoneController.text.trim(), _passwordController.text);
+    widget.auth.login(_emailController.text, _passwordController.text);
   }
 
   @override
@@ -40,7 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Sarathi Grocery',
+                    kAppName,
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.bold,
@@ -48,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Wholesale grocery management',
+                    'Shop management',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -56,11 +57,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 32),
                   TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(
-                      labelText: 'Phone number',
-                      prefixIcon: Icon(Icons.phone),
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.email_outlined),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -73,6 +74,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     onSubmitted: (_) => _submit(),
                   ),
+                  if (widget.auth.loginNotice != null) ...[
+                    const SizedBox(height: 8),
+                    Text(widget.auth.loginNotice!, style: const TextStyle(color: Colors.green)),
+                  ],
                   if (widget.auth.loginError != null) ...[
                     const SizedBox(height: 8),
                     Text(
@@ -106,22 +111,17 @@ class _LoginScreenState extends State<LoginScreen> {
                           : const Text('Log In'),
                     ),
                   ),
-                  // Always shown. Setup checks on the server and refuses if a
-                  // business already exists (one business per backend).
-                  Padding(
-                    padding: const EdgeInsets.only(top: 24),
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.add_business_outlined),
-                      label: const Text('Set up a new business'),
-                      onPressed: widget.auth.busy
-                          ? null
-                          : () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => SetupScreen(auth: widget.auth),
-                              ),
+                  const SizedBox(height: 24),
+                  TextButton(
+                    onPressed: widget.auth.busy
+                        ? null
+                        : () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SetupScreen(auth: widget.auth),
                             ),
-                    ),
+                          ),
+                    child: const Text('New shop? Sign up'),
                   ),
                 ],
               ),

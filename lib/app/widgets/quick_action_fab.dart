@@ -89,7 +89,7 @@ class QuickActionFab extends StatelessWidget {
           _QuickAction(
             icon: Icons.receipt_long,
             label: 'Add Expense',
-            run: () => showAddExpenseSheet(context, cash),
+            run: () => showAddExpenseSheet(context, cash, userName: auth.currentUser?.name ?? ''),
           ),
       ];
 

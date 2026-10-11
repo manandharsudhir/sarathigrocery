@@ -4,7 +4,7 @@
 import { after, before, test } from 'node:test';
 import { readFileSync, existsSync } from 'node:fs';
 import { assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, increment, writeBatch } from 'firebase/firestore';
+import { arrayUnion, doc, increment, writeBatch } from 'firebase/firestore';
 
 const fixture = new URL('./fixtures/app_writes.json', import.meta.url);
 let env;
@@ -24,13 +24,21 @@ function coalesce(ops) {
   for (const op of ops) {
     const key = `${op.collection}/${op.id}`;
     if (op.kind === 'delete') {
-      docs.set(key, { op, data: {}, deltas: {}, del: true });
+      docs.set(key, { op, data: {}, deltas: {}, unions: {}, del: true });
       continue;
     }
-    const cur = docs.get(key) ?? { op, data: {}, deltas: {}, del: false };
+    const cur = docs.get(key) ?? { op, data: {}, deltas: {}, unions: {}, del: false };
     if (op.kind === 'put') {
       Object.assign(cur.data, op.data);
-      for (const f of Object.keys(op.data)) delete cur.deltas[f];
+      for (const f of Object.keys(op.data)) {
+        delete cur.deltas[f];
+        delete cur.unions[f];
+      }
+    } else if (op.kind === 'arrayUnion') {
+      for (const [f, values] of Object.entries(op.values)) {
+        if (Array.isArray(cur.data[f])) cur.data[f] = [...cur.data[f], ...values.filter((v) => !cur.data[f].includes(v))];
+        else cur.unions[f] = [...(cur.unions[f] ?? []), ...values];
+      }
     } else {
       for (const [f, delta] of Object.entries(op.deltas)) {
         if (typeof cur.data[f] === 'number') cur.data[f] += delta;
@@ -46,12 +54,14 @@ test('every write the app makes is allowed by the rules', { skip: !existsSync(fi
   const commits = JSON.parse(readFileSync(fixture, 'utf8'));
   await env.clearFirestore();
   for (const [i, commit] of commits.entries()) {
-    const db = env.authenticatedContext(commit.actor).firestore();
+    const token = { email: commit.actorEmail, email_verified: commit.actorEmailVerified };
+    const db = env.authenticatedContext(commit.actor, token).firestore();
     const batch = writeBatch(db);
     for (const w of coalesce(commit.ops)) {
       const ref = doc(db, w.op.collection, w.op.id);
       const data = { ...w.data };
       for (const [f, delta] of Object.entries(w.deltas)) data[f] = increment(delta);
+      for (const [f, values] of Object.entries(w.unions)) data[f] = arrayUnion(...values);
       if (w.del && Object.keys(data).length === 0) batch.delete(ref);
       else batch.set(ref, data, { merge: !w.del });
     }

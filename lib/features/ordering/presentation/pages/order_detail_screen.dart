@@ -4,7 +4,6 @@ import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/core/widgets/signature_pad.dart';
 import 'package:sarathigrocery/core/widgets/status_badge.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
-import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_widgets.dart';
@@ -23,16 +22,13 @@ void showDeliverSheet(BuildContext context, CustomerOrder order, OrderingControl
       submitLabel: 'Deliver & Collect',
       orderTotal: order.total,
       orderAlreadyPaid: ordering.paidFor(order),
-      // Staff-placed orders have no code (the staff member would know it).
-      askForCode: order.customer.hasAppLogin && order.placedByStaffName.isEmpty,
       allowZero: true,
-      signatureRequired: !order.customer.hasAppLogin,
+      signatureRequired: ordering.signatureRequired,
       onSubmit: (input) async {
         await ordering.deliverAndCollect(order,
             amount: input.amount,
             method: input.method,
             reference: input.reference,
-            deliveryCode: input.code,
             signature: input.signature,
             signedName: input.signedName,
             collector: auth.currentUser!);
@@ -42,7 +38,7 @@ void showDeliverSheet(BuildContext context, CustomerOrder order, OrderingControl
   );
 }
 
-enum _Viewer { customer, staff, deliverer, readOnly }
+enum _Viewer { staff, deliverer, readOnly }
 
 class OrderDetailScreen extends StatelessWidget {
   const OrderDetailScreen({super.key, required this.order, required this.controller, required this.auth, this.staffView = false});
@@ -51,13 +47,12 @@ class OrderDetailScreen extends StatelessWidget {
   final OrderingController controller;
   final AuthController auth;
 
-  /// Owner/employee view (manage the order). Delivery staff and customers
-  /// get their own views automatically.
+  /// Owner/employee view (manage the order). Delivery staff get their own
+  /// view automatically.
   final bool staffView;
 
   _Viewer get _viewer {
     final user = auth.currentUser!;
-    if (user.role == UserRole.customer) return _Viewer.customer;
     if (staffView) return _Viewer.staff;
     if (order.assignedToId == user.id && user.can(Permission.deliverOrders)) return _Viewer.deliverer;
     return _Viewer.readOnly;
@@ -71,7 +66,6 @@ class OrderDetailScreen extends StatelessWidget {
         final viewer = _viewer;
         final open = order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled;
         final payments = controller.paymentsFor(order);
-        final code = viewer == _Viewer.customer && open ? controller.deliveryCodeFor(order) : null;
 
         return Scaffold(
           appBar: AppBar(title: Text('Order ${order.id}')),
@@ -82,15 +76,11 @@ class OrderDetailScreen extends StatelessWidget {
               Text('${order.deliveryType == DeliveryType.delivery ? 'Delivery' : 'Pickup'} · ${formatDate(order.createdDate)}'),
               if (order.address.isNotEmpty) Text('Address: ${order.address}'),
               if (order.notes.isNotEmpty) Text('Notes: ${order.notes}'),
-              if (viewer != _Viewer.customer) ...[
-                const SizedBox(height: 8),
-                Wrap(spacing: 6, runSpacing: 4, children: [
-                  if (order.overCreditLimit) const StatusBadge(label: 'Over credit limit', color: Colors.red),
-                  StatusBadge(label: order.assignedToId == null ? 'Not assigned' : 'Delivery: ${order.assignedToName}', color: Colors.indigo),
-                  StatusBadge(label: 'Customer balance ${formatNpr(order.customer.outstandingBalance)}', color: Colors.blueGrey),
-                ]),
-              ],
-              if (code != null) _DeliveryCodeCard(code: code),
+              const SizedBox(height: 8),
+              Wrap(spacing: 6, runSpacing: 4, children: [
+                StatusBadge(label: order.assignedToId == null ? 'Not assigned' : 'Delivery: ${order.assignedToName}', color: Colors.indigo),
+                StatusBadge(label: 'Customer balance ${formatNpr(order.customer.outstandingBalance)}', color: Colors.blueGrey),
+              ]),
               const SizedBox(height: 16),
               if (order.status != OrderStatus.cancelled) _StatusTimeline(current: order.status) else const Text('This order was cancelled.', style: TextStyle(color: Colors.red)),
               const SizedBox(height: 24),
@@ -98,10 +88,15 @@ class OrderDetailScreen extends StatelessWidget {
               ...order.items.map((item) => ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(item.product.name),
-                    subtitle: Text('x${item.qty}'),
+                    subtitle: Text('${formatQty(item.qty)} ${item.unit} × ${formatNpr(item.price)}'),
                     trailing: Text(formatNpr(item.lineTotal)),
                   )),
               const Divider(),
+              if (order.vatAmount > 0)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [Text('VAT${order.vatIncluded ? ' (included)' : ''}'), Text(formatNpr(order.vatAmount))],
+                ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)), Text(formatNpr(order.total), style: const TextStyle(fontWeight: FontWeight.bold))],
@@ -120,45 +115,10 @@ class OrderDetailScreen extends StatelessWidget {
               const SizedBox(height: 24),
               if (viewer == _Viewer.staff && open) _StaffActions(order: order, controller: controller, auth: auth),
               if (viewer == _Viewer.deliverer && open) _DelivererActions(order: order, controller: controller, auth: auth),
-              if (viewer == _Viewer.customer && !open)
-                FilledButton.icon(
-                  onPressed: () {
-                    controller.repeatOrder(order);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Items added to cart')));
-                  },
-                  icon: const Icon(Icons.replay),
-                  label: const Text('Repeat Order'),
-                ),
             ],
           ),
         );
       },
-    );
-  }
-}
-
-class _DeliveryCodeCard extends StatelessWidget {
-  const _DeliveryCodeCard({required this.code});
-
-  final String code;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(top: 16),
-      elevation: 0,
-      color: Theme.of(context).colorScheme.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Delivery code'),
-            Text(code, style: Theme.of(context).textTheme.displaySmall?.copyWith(letterSpacing: 6, fontWeight: FontWeight.bold)),
-            const Text('Give this to the delivery person only after you agree the amount you are paying. It proves you approved it — never share it earlier.'),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -215,35 +175,12 @@ class _StaffActions extends StatelessWidget {
           ],
           onChanged: (id) => controller.assign(order, deliverers.where((d) => d.id == id).firstOrNull, by: user),
         ),
-        if (user.role == UserRole.owner)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              icon: const Icon(Icons.lock_reset, size: 18),
-              label: const Text('Unlock delivery code'),
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                final attempts = await controller.codeAttempts(order);
-                if (attempts == 0) {
-                  messenger.showSnackBar(const SnackBar(content: Text('No wrong codes tried for this order.')));
-                  return;
-                }
-                controller.resetCodeAttempts(order, by: user);
-                messenger.showSnackBar(SnackBar(content: Text('Reset after $attempts attempt${attempts == 1 ? '' : 's'}.')));
-              },
-            ),
-          ),
         const SizedBox(height: 12),
         Row(
           children: [
             if (nextStatus != null)
               Expanded(
-                child: FilledButton(
-                  onPressed: () => nextStatus == OrderStatus.delivered
-                      ? showDeliverSheet(context, order, controller, auth)
-                      : controller.advanceOrderStatus(order, nextStatus, userName: user.name, userId: user.id),
-                  child: Text(nextStatus == OrderStatus.delivered ? 'Deliver & Collect' : 'Mark ${orderStatusLabel(nextStatus)}'),
-                ),
+                child: NextOrderButton(order: order, ordering: controller, auth: auth),
               ),
             if (nextStatus != null) const SizedBox(width: 12),
             Expanded(
@@ -294,4 +231,25 @@ String orderPaymentSummary(CustomerOrder order, List<CustomerPayment> payments) 
   if (order.status != OrderStatus.delivered) return '';
   if (paid <= 0) return 'On credit';
   return paid >= order.total ? 'Paid ${formatNpr(paid)}' : 'Part paid ${formatNpr(paid)}';
+}
+
+/// The one primary button that moves an order to its next status.
+/// The delivered step opens Deliver & Collect instead of advancing directly.
+class NextOrderButton extends StatelessWidget {
+  const NextOrderButton({super.key, required this.order, required this.ordering, required this.auth});
+
+  final CustomerOrder order;
+  final OrderingController ordering;
+  final AuthController auth;
+
+  @override
+  Widget build(BuildContext context) {
+    final next = nextOrderStatus(order.status)!;
+    return FilledButton(
+      onPressed: () => next == OrderStatus.delivered
+          ? showDeliverSheet(context, order, ordering, auth)
+          : ordering.advanceOrderStatus(order, next, userName: auth.currentUser?.name ?? '', userId: auth.currentUser?.id),
+      child: Text(next == OrderStatus.delivered ? 'Deliver & Collect' : 'Next: ${orderStatusLabel(next)}'),
+    );
+  }
 }

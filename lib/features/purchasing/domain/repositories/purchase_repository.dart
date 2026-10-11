@@ -8,7 +8,8 @@ abstract class PurchaseRepository {
 
   List<PurchaseReturn> get purchaseReturns;
 
-  Purchase record(Supplier supplier, List<PurchaseItem> items, double paidAmount);
+  Purchase record(Supplier supplier, List<PurchaseItem> items, double paidAmount,
+      {String account, double vatAmount, String supplierBillNo, DateTime? supplierBillDate});
 
   void recordReturn(PurchaseReturn purchaseReturn);
 }

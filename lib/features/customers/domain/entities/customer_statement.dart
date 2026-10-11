@@ -92,7 +92,7 @@ CustomerStatement buildStatement(Customer customer, Iterable<Sale> allSales, Ite
     final p = e.payment;
     final title = s != null
         ? '${s.orderId != null ? 'Order ${s.orderId} invoice' : 'Credit sale ${s.id}'}${s.status == SaleStatus.completed ? '' : ' (${s.status.name})'}'
-        : 'Payment · ${paymentMethodLabel(p!.method)}${p.isReversed ? ' (reversed)' : ''}';
+        : 'Payment · ${paymentMethodLabel(p!.method)}${p.isReversed ? ' (undone)' : ''}';
     lines.add(StatementLine(date: e.date, title: title, change: effect(e), balance: running, sale: s, payment: p));
   }
 

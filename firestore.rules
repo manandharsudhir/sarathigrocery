@@ -6,30 +6,26 @@ rules_version = '2';
 //   - AppScope._loadPlan in lib/app/injection.dart        (what each role reads)
 // Tested by firestore_tests/ (run against the emulator).
 //
-// Model: staff (owner/accountant/employee) read the whole business; each
-// write needs the permission the app checks for that action. Delivery
-// staff see customers plus only their assigned orders and own collections.
-// Customers read the catalogue plus their own profile/account/bills/
-// payments/orders/notifications, place orders and confirm/dispute payments.
-// Deactivated accounts can do nothing. Ledgers, payments and the audit log
-// are append-only (payments only gain confirmation/settlement/reversal) —
-// except that the owner may delete anything, which exists solely for the
-// "reset all business data" action.
+// Multi-shop: every shop's data lives under shops/{shopId}/. The profile at
+// shops/{shopId}/users/{uid} IS the membership (role + permission
+// overrides); every check below reads only that shop's profile, so nothing
+// reaches across shops. accounts/{uid} = {shopIds} tells login where to look.
+//
+// Model: staff (owner/employee) read the whole shop; each write needs the
+// permission the app checks for that action. Delivery staff see customers
+// plus only their assigned orders and own collections. Customers have no
+// logins. Deactivated accounts can do nothing. Ledgers, payments and the
+// audit log are append-only (payments only gain confirmation/settlement/
+// reversal) — except that the owner may delete anything in their own shop,
+// which exists solely for the "reset business" action.
 //
 // When migrating to your own backend these checks move into its API; this
 // file is deleted along with the Firebase implementations.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
-    function me() { return get(userPath(request.auth.uid)).data; }
-    function hasProfile() { return request.auth != null && exists(userPath(request.auth.uid)); }
-    function active() { return hasProfile() && me().active == true; }
-    function role() { return me().role; }
-    function staff() { return active() && role() in ['owner', 'accountant', 'employee']; }
-    function customer() { return active() && role() == 'customer'; }
-    function myCustomerId() { return me().linkedCustomerId; }
-    function isOwner() { return active() && role() == 'owner'; }
+    function shopPath(shopId) { return /databases/$(database)/documents/shops/$(shopId); }
+    function memberPath(shopId, uid) { return /databases/$(database)/documents/shops/$(shopId)/users/$(uid); }
 
     function defaultPermissions(r) {
       return r == 'owner' ? [
@@ -37,300 +33,410 @@ service cloud.firestore {
           'manageInventory', 'adjustInventory', 'viewCustomers', 'manageCustomers', 'viewSuppliers',
           'manageSuppliers', 'recordPayments', 'manageExpenses', 'viewAccounting', 'viewReports',
           'manageProducts', 'changePrices', 'manageEmployees', 'managePermissions', 'manageSettings',
-          'deliverOrders', 'reconcileCash', 'createCustomers']
-        : r == 'accountant' ? [
-          'viewSales', 'createSales', 'viewPurchases', 'createPurchases', 'viewCustomers', 'manageCustomers',
-          'viewSuppliers', 'manageSuppliers', 'recordPayments', 'manageExpenses', 'viewAccounting', 'viewReports',
-          'reconcileCash', 'createCustomers']
+          'deliverOrders', 'reconcileCash', 'createCustomers', 'sellBelowMinimum']
         : r == 'employee' ? ['viewSales', 'createSales', 'viewCustomers', 'recordPayments', 'deliverOrders', 'createCustomers']
         : r == 'delivery' ? ['deliverOrders']
         : [];
     }
 
-    // Per-account override replaces (not extends) the role default.
-    function permissions() {
-      return me().get('customPermissions', null) != null ? me().customPermissions : defaultPermissions(role());
+    // The signed-in account's membership of a shop.
+    function memberOf(shopId) { return request.auth != null && exists(memberPath(shopId, request.auth.uid)); }
+    function profileIn(shopId) { return get(memberPath(shopId, request.auth.uid)).data; }
+    function activeIn(shopId) { return memberOf(shopId) && profileIn(shopId).active == true; }
+    // Per-account override replaces (not extends) the role default. Staff
+    // with "Can handle cash & accounts" hold an override that adds
+    // reconcileCash and the money permissions (`cashPermissions` in the app).
+    function permissionsIn(shopId) {
+      return profileIn(shopId).get('customPermissions', null) != null ? profileIn(shopId).customPermissions : defaultPermissions(profileIn(shopId).role);
+    }
+    function staffIn(shopId) { return activeIn(shopId) && profileIn(shopId).role in ['owner', 'employee']; }
+    function canIn(shopId, p) { return staffIn(shopId) && p in permissionsIn(shopId); }
+
+    // Only logins that opened their email verification link may create shops.
+    function emailVerified() {
+      return request.auth != null && request.auth.token.get('email_verified', false) == true;
     }
 
-    function can(p) { return staff() && p in permissions(); }
-
-    // Anyone (staff or delivery role) allowed to deliver.
-    function deliverer() { return active() && 'deliverOrders' in permissions(); }
-
-    function orderPath(id) { return /databases/$(database)/documents/orders/$(id); }
-    function assignedToMe(orderData) { return orderData.get('assignedToId', null) == request.auth.uid; }
-
-    function changedOnly(fields) {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    // This request creates shops/{shopId} with the caller as owner.
+    function creatingShop(shopId) {
+      return emailVerified() && !exists(shopPath(shopId))
+        && getAfter(shopPath(shopId)).data.ownerId == request.auth.uid;
     }
 
-    // ---- First-run setup: exactly one owner, only while no business exists.
+    // ---- Accounts: where login finds a user's shops. Only ever gains a shop
+    // the account has a profile in (after this write), added by the account
+    // itself or by that shop's staff manager; only the account itself may
+    // remove entries. A pointer grants nothing: access is the profile.
 
-    match /meta/setup {
-      allow get: if true; // lets the login screen offer "set up" only when relevant
-      allow create: if request.auth != null
-        && request.resource.data.keys().hasOnly(['ownerId'])
+    function mayJoin(uid, shopId) {
+      return shopId is string && existsAfter(memberPath(shopId, uid))
+        && (uid == request.auth.uid || canIn(shopId, 'manageEmployees'));
+    }
+
+    match /accounts/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.resource.data.keys().hasOnly(['shopIds'])
+        && request.resource.data.shopIds is list
+        && request.resource.data.shopIds.size() == 1
+        && mayJoin(uid, request.resource.data.shopIds[0]);
+      allow update: if request.resource.data.keys().hasOnly(['shopIds'])
+        && request.resource.data.shopIds is list && (
+          // Append exactly one shop at the end.
+          (request.resource.data.shopIds.size() == resource.data.shopIds.size() + 1
+            && request.resource.data.shopIds.hasAll(resource.data.shopIds)
+            && mayJoin(uid, request.resource.data.shopIds[request.resource.data.shopIds.size() - 1]))
+          // The account itself drops entries (owner resetting a shop).
+          || (uid == request.auth.uid && resource.data.shopIds.hasAll(request.resource.data.shopIds)));
+      // Account deletion.
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ---- Emails: emails/{email} = {uid}, so a shop can add an existing login
+    // as staff without its password. Only the login with this email writes
+    // it; any signed-in user may look up one email, never list them.
+    match /emails/{email} {
+      allow get: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.auth.token.get('email', null) == email
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      // Account deletion.
+      allow delete: if request.auth != null && request.auth.token.get('email', null) == email;
+    }
+
+    match /shops/{shopId} {
+      function me() { return profileIn(shopId); }
+      function active() { return activeIn(shopId); }
+      function role() { return me().role; }
+      function staff() { return staffIn(shopId); }
+      // Owners and co-owners have the same rights...
+      function isOwner() { return active() && role() == 'owner'; }
+      // ...except what only the founding owner (shops/{id}.ownerId) may do:
+      // erase the shop, add or remove co-owners, hand the role over.
+      function isFounder() { return isOwner() && get(shopPath(shopId)).data.ownerId == request.auth.uid; }
+      function permissions() { return permissionsIn(shopId); }
+      function can(p) { return canIn(shopId, p); }
+
+      // Anyone (staff or delivery role) allowed to deliver.
+      function deliverer() { return active() && 'deliverOrders' in permissions(); }
+
+      function orderPath(id) { return /databases/$(database)/documents/shops/$(shopId)/orders/$(id); }
+      function assignedToMe(orderData) { return orderData.get('assignedToId', null) == request.auth.uid; }
+
+      // Settings → Safeguards: 'signature', 'phoneConfirm', 'handover',
+      // 'onlineOnly' (the last is app-only: rules can't tell a queued write).
+      // Off by default; when off, the simpler path below is allowed.
+      function guarded(name) {
+        return name in get(/databases/$(database)/documents/shops/$(shopId)/settings/business).data.get('safeguards', []);
+      }
+
+      // ---- VAT bills: tax invoices and credit notes are numbered in order
+      // per fiscal year, from counters/{kind-year} = {next}. A bill takes
+      // exactly the next number and moves the counter on by one in the same
+      // batch, so two devices can never issue the same number (the second
+      // is refused and retries).
+      function vatShop() {
+        return get(/databases/$(database)/documents/shops/$(shopId)/settings/business).data.get('vatRegistered', false) == true;
+      }
+      function counterPath(series) { return /databases/$(database)/documents/shops/$(shopId)/counters/$(series); }
+      function takesNumber(series, seq, kind) {
+        return series is string && series.matches(kind + '-[0-9]{4}') && seq is int
+          && (exists(counterPath(series)) ? get(counterPath(series)).data.next : 1) == seq
+          && getAfter(counterPath(series)).data.next == seq + 1;
+      }
+
+      match /counters/{series} {
+        allow read: if staff() || deliverer();
+        allow create: if (staff() || deliverer()) && request.resource.data.keys().hasOnly(['next']) && request.resource.data.next == 2;
+        allow update: if (staff() || deliverer()) && request.resource.data.keys().hasOnly(['next']) && request.resource.data.next == resource.data.next + 1;
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
+
+      match /creditNotes/{id} {
+        allow read: if staff();
+        allow create: if (can('cancelSales') || can('editSales'))
+          && takesNumber(request.resource.data.series, request.resource.data.seq, 'credit');
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
+
+      // Year-end close date of a settings doc (0 = never closed).
+      function closedOf(settings) {
+        let c = settings.get('closedThrough', null);
+        return c == null ? 0 : c;
+      }
+
+      function changedOnly(fields) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+      }
+
+      // The shop doc: created once, with its owner profile, by the owner.
+      // Updated only to hand the founding role to an active co-owner.
+      // Deleted by the founder's reset (last step).
+      allow get: if active();
+      allow create: if emailVerified()
+        && request.resource.data.keys().hasOnly(['ownerId', 'createdAt'])
         && request.resource.data.ownerId == request.auth.uid
-        && getAfter(userPath(request.auth.uid)).data.role == 'owner';
-      // No update: a second setup attempt is an update, and fails. Deleted
-      // only by the owner's business reset (last step).
-      allow delete: if isOwner();
-    }
+        && getAfter(memberPath(shopId, request.auth.uid)).data.role == 'owner';
+      allow update: if isFounder() && changedOnly(['ownerId'])
+        && get(memberPath(shopId, request.resource.data.ownerId)).data.role == 'owner'
+        && get(memberPath(shopId, request.resource.data.ownerId)).data.active == true;
+      allow delete: if isFounder();
 
-    match /users/{userId} {
-      allow read: if staff() || (active() && userId == request.auth.uid);
+      match /users/{userId} {
+        // Own profile even if missing or deactivated: login probes each shop.
+        allow read: if staff() || (request.auth != null && userId == request.auth.uid);
 
-      allow create: if
-        // Setup: the owner profile is created in the same batch as meta/setup.
-        (request.auth != null && userId == request.auth.uid
-          && request.resource.data.role == 'owner'
-          && request.resource.data.active == true
-          && !exists(/databases/$(database)/documents/meta/setup)
-          && existsAfter(/databases/$(database)/documents/meta/setup))
-        || (can('manageEmployees') && request.resource.data.role in ['accountant', 'employee', 'delivery'])
-        || (can('manageCustomers') && request.resource.data.role == 'customer'
-          && exists(/databases/$(database)/documents/customers/$(request.resource.data.linkedCustomerId)));
+        allow create: if
+          // Setup: the owner profile is created in the same batch as the shop.
+          (userId == request.auth.uid
+            && request.resource.data.role == 'owner'
+            && request.resource.data.active == true
+            && creatingShop(shopId))
+          || (can('manageEmployees') && request.resource.data.role in ['employee', 'delivery'])
+          // Co-owners are added by the founding owner only.
+          || (isFounder() && request.resource.data.role == 'owner');
 
-      // Nobody edits themselves or the owner; role/phone/link never change.
-      allow update: if userId != request.auth.uid
-        && resource.data.role != 'owner'
-        && changedOnly(['name', 'active', 'customPermissions'])
-        && (resource.data.role == 'customer' ? can('manageCustomers') : can('manageEmployees'))
-        && (!('customPermissions' in request.resource.data.diff(resource.data).affectedKeys()) || can('managePermissions'));
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+        // Nobody edits themselves or the owner; role/phone/email never change...
+        allow update: if (userId != request.auth.uid
+          && resource.data.role != 'owner'
+          && changedOnly(['name', 'active', 'customPermissions'])
+          && can('manageEmployees')
+          && (!('customPermissions' in request.resource.data.diff(resource.data).affectedKeys()) || can('managePermissions')))
+          // The founder switches co-owners off (and back on).
+          || (isFounder() && userId != request.auth.uid && resource.data.role == 'owner' && changedOnly(['active']))
+          // A co-owner leaves (switches themselves off).
+          || (userId == request.auth.uid && resource.data.role == 'owner' && !isFounder()
+            && changedOnly(['active']) && request.resource.data.active == false)
+          // ...and account deletion: anyone but the founder anonymises and
+          // switches off their own profile (kept so records' ids resolve).
+          || (userId == request.auth.uid
+            && (resource.data.role != 'owner' || !isFounder())
+            && changedOnly(['name', 'phone', 'email', 'active'])
+            && request.resource.data.name == 'Former staff'
+            && request.resource.data.phone == ''
+            && request.resource.data.get('email', '') == ''
+            && request.resource.data.active == false);
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /settings/{doc} {
-      allow read: if active();
-      allow write: if can('manageSettings');
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /settings/{doc} {
+        allow read: if active();
+        // Setup writes the settings in the same batch as the shop.
+        allow create: if can('manageSettings') || creatingShop(shopId);
+        // Safeguards protect the owner against staff, so only the owner changes them.
+        // Safeguards, owners' shares, accounts, the year close and VAT
+        // registration are the owner's; a closed year never reopens.
+        allow update: if can('manageSettings')
+          && (isOwner() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+            ['safeguards', 'owners', 'moneyAccounts', 'expenseCategories', 'closedThrough', 'vatRegistered', 'panNumber', 'pricesIncludeVat', 'taxPercent']))
+          && closedOf(request.resource.data) >= closedOf(resource.data);
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /categories/{name} {
-      allow read: if active();
-      allow create: if can('manageProducts');
-      allow delete: if can('manageProducts') || isOwner();
-    }
+      match /categories/{name} {
+        allow read: if active();
+        allow create: if can('manageProducts');
+        allow delete: if can('manageProducts') || isOwner();
+      }
 
-    // The catalogue carries no cost price — that lives in productCosts.
-    // (Older docs had one; the owner's app nulls it on login.)
-    function noCost() { return request.resource.data.get('purchasePrice', null) == null; }
+      // The catalogue carries no cost price — that lives in productCosts.
+      function noCost() { return request.resource.data.get('purchasePrice', null) == null; }
 
-    match /products/{productId} {
-      allow read: if active();
-      allow create: if can('manageProducts') && noCost();
-      allow update: if noCost() && (can('manageProducts')
-        // Sales, purchases, returns, adjustments and deliveries move stock.
-        || ((staff() || deliverer()) && changedOnly(['stockQty', 'reservedQty']))
-        // Placing an order reserves stock (customers can't cancel, so only up).
-        || (customer() && changedOnly(['reservedQty']) && request.resource.data.reservedQty > resource.data.reservedQty));
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /products/{productId} {
+        allow read: if active();
+        allow create: if can('manageProducts') && noCost();
+        allow update: if noCost() && (can('manageProducts')
+          // Sales, purchases, returns, adjustments and deliveries move stock.
+          || ((staff() || deliverer()) && changedOnly(['stockQty', 'reservedQty'])));
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    // Staff-only: customers and delivery staff never see margins.
-    match /productCosts/{productId} {
-      allow read: if staff();
-      allow create: if can('manageProducts');
-      // Receiving a purchase records the latest cost.
-      allow update: if can('manageProducts') || can('createPurchases');
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      // Staff-only: delivery staff never see margins.
+      match /productCosts/{productId} {
+        allow read: if staff();
+        allow create: if can('manageProducts');
+        // Receiving a purchase records the latest cost.
+        allow update: if can('manageProducts') || can('createPurchases');
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /stockAdjustments/{id} {
-      allow read: if staff();
-      allow create: if can('adjustInventory');
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /stockAdjustments/{id} {
+        allow read: if staff();
+        allow create: if can('adjustInventory');
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /customers/{customerId} {
-      allow read: if staff() || deliverer() || (customer() && customerId == myCustomerId());
-      allow create: if can('manageCustomers')
-        // Sales staff may add customers, but without credit terms.
-        || (can('createCustomers')
-          && request.resource.data.creditLimit == 0
-          && request.resource.data.outstandingBalance == 0
-          && request.resource.data.get('openingBalance', 0) == 0
-          && request.resource.data.defaultDiscountPercent == 0
-          && request.resource.data.get('hasAppLogin', false) == false);
-      allow update: if (can('manageCustomers') && !('openingBalance' in request.resource.data.diff(resource.data).affectedKeys()))
-        // Credit sales, invoices, cancellations, returns and payments move the balance.
-        || ((staff() || deliverer()) && changedOnly(['outstandingBalance', 'lastPaymentDate']));
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /customers/{customerId} {
+        allow read: if staff() || deliverer();
+        allow create: if can('manageCustomers')
+          // Sales staff may add customers, but without credit terms.
+          || (can('createCustomers')
+            && request.resource.data.creditLimit == 0
+            && request.resource.data.outstandingBalance == 0
+            && request.resource.data.get('openingBalance', 0) == 0);
+        allow update: if (can('manageCustomers') && !('openingBalance' in request.resource.data.diff(resource.data).affectedKeys()))
+          // Credit sales, invoices, cancellations, returns and payments move the balance.
+          || ((staff() || deliverer()) && changedOnly(['outstandingBalance', 'lastPaymentDate']));
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /suppliers/{id} {
-      allow read: if staff();
-      allow create: if can('manageSuppliers');
-      allow update: if can('manageSuppliers') || (staff() && changedOnly(['amountPayable']));
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /suppliers/{id} {
+        allow read: if staff();
+        allow create: if can('manageSuppliers');
+        allow update: if can('manageSuppliers') || (staff() && changedOnly(['amountPayable']));
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /purchases/{id} {
-      allow read: if staff();
-      allow create: if can('createPurchases');
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /purchases/{id} {
+        allow read: if staff();
+        allow create: if can('createPurchases');
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /purchaseReturns/{id} {
-      allow read: if staff();
-      allow create: if can('createPurchases');
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /purchaseReturns/{id} {
+        allow read: if staff();
+        allow create: if can('createPurchases');
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /sales/{id} {
-      // Customers see their own bills (statement).
-      allow read: if staff() || (customer() && resource.data.customerId == myCustomerId());
-      allow create: if request.resource.data.status == 'completed' && (can('createSales')
-        // The invoice for an order, raised by whoever delivers it.
-        || (deliverer() && request.resource.data.get('orderId', null) is string
-          && assignedToMe(getAfter(orderPath(request.resource.data.orderId)).data)
-          && getAfter(orderPath(request.resource.data.orderId)).data.status == 'delivered'));
-      allow update: if (can('cancelSales') || can('editSales'))
-        && changedOnly(['status', 'flaggedForApproval'])
-        && resource.data.status == 'completed';
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /sales/{id} {
+        allow read: if staff();
+        // A VAT shop's every sale is a numbered tax invoice.
+        allow create: if request.resource.data.status == 'completed'
+          && (!vatShop() || takesNumber(request.resource.data.get('invoiceSeries', null), request.resource.data.get('invoiceSeq', null), 'invoice'))
+          && (can('createSales')
+          // The invoice for an order, raised by whoever delivers it.
+          || (deliverer() && request.resource.data.get('orderId', null) is string
+            && assignedToMe(getAfter(orderPath(request.resource.data.orderId)).data)
+            && getAfter(orderPath(request.resource.data.orderId)).data.status == 'delivered'));
+        allow update: if (can('cancelSales') || can('editSales'))
+          && changedOnly(['status', 'flaggedForApproval'])
+          && resource.data.status == 'completed';
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    // Append-only money records.
-    match /cashLedger/{id} {
-      allow read: if staff();
-      allow create: if staff();
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      // The payment [paymentId] is created in this batch, settled by the caller for [amount].
+      function ownSettlement(paymentId, amount) {
+        let path = /databases/$(database)/documents/shops/$(shopId)/customerPayments/$(paymentId);
+        let after = getAfter(path).data;
+        return !exists(path) && after.get('settledById', null) == request.auth.uid && after.settledAmount == amount;
+      }
 
-    match /expenses/{id} {
-      allow read: if staff();
-      allow create: if can('manageExpenses');
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      // Append-only money records.
+      match /cashLedger/{id} {
+        allow read: if staff();
+        allow create: if staff()
+          // Without the handover safeguard, delivery staff count their own
+          // collection in as they record it.
+          || (deliverer() && !guarded('handover') && request.resource.data.type == 'collection'
+            && ownSettlement(request.resource.data.reference, request.resource.data.amount));
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /partnerLedger/{id} {
-      allow read: if staff();
-      allow create: if can('viewAccounting');
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /expenses/{id} {
+        allow read: if staff();
+        allow create: if can('manageExpenses');
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /orders/{orderId} {
-      allow read: if staff()
-        || (deliverer() && assignedToMe(resource.data))
-        || (customer() && resource.data.customerId == myCustomerId());
-      allow create: if request.resource.data.status == 'placed'
-        && request.resource.data.get('assignedToId', null) == null
-        && ((customer() && request.resource.data.customerId == myCustomerId()
-              && request.resource.data.get('placedByStaffName', '') == '')
-          // Staff take a phone/WhatsApp order for an existing customer.
-          || (can('createSales') && request.resource.data.placedByStaffName is string
-              && request.resource.data.placedByStaffName.size() > 0
-              && exists(/databases/$(database)/documents/customers/$(request.resource.data.customerId))));
-      allow update: if resource.data.status in ['placed', 'confirmed', 'preparing', 'ready', 'outForDelivery'] && (
-        (staff() && changedOnly(['status', 'updatedDate', 'assignedToId', 'assignedToName', 'receivedSignature', 'receivedBy']))
-        // The assigned deliverer only takes it out and delivers it.
-        || (deliverer() && assignedToMe(resource.data) && changedOnly(['status', 'updatedDate', 'receivedSignature', 'receivedBy'])
-          && request.resource.data.status in ['outForDelivery', 'delivered']));
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      // Double-entry journal (Books in the app). Append-only: corrections
+      // are new entries. Nothing may be dated into a closed year. Owners'
+      // money, opening balances, adjustments and the year close are the
+      // owner's; delivery staff only book what they invoice and collect.
+      // (Debits = credits is checked in the app: rules can't sum lines.)
+      function closedThrough() {
+        return closedOf(get(/databases/$(database)/documents/shops/$(shopId)/settings/business).data);
+      }
+      match /journal/{id} {
+        allow read: if staff();
+        allow create: if request.resource.data.lines is list
+          && request.resource.data.date is int
+          && request.resource.data.date > closedThrough()
+          && ((staff() && (isOwner() || !(request.resource.data.kind in ['capital', 'drawing', 'loan', 'loanRepaid', 'dividend', 'manual', 'opening', 'close'])))
+            || (deliverer() && request.resource.data.kind in ['sale', 'payment', 'settlement']));
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    // One per order; only the ordering customer can read it, so a delivery
-    // person can only learn it from the customer. Payments quoting it are
-    // checked against it below.
-    match /deliveryCodes/{orderId} {
-      allow read: if customer() && resource.data.customerId == myCustomerId();
-      allow create: if customer()
-        && request.resource.data.customerId == myCustomerId()
-        && getAfter(orderPath(orderId)).data.customerId == myCustomerId()
-        && request.resource.data.code is string && request.resource.data.code.size() == 6;
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /orders/{orderId} {
+        allow read: if staff() || (deliverer() && assignedToMe(resource.data));
+        // Staff take a phone/WhatsApp order for an existing customer.
+        allow create: if request.resource.data.status == 'placed'
+          && request.resource.data.get('assignedToId', null) == null
+          && can('createSales') && request.resource.data.placedByStaffName is string
+          && request.resource.data.placedByStaffName.size() > 0
+          && exists(/databases/$(database)/documents/shops/$(shopId)/customers/$(request.resource.data.customerId));
+        allow update: if resource.data.status in ['placed', 'confirmed', 'preparing', 'ready', 'outForDelivery']
+          // Signature safeguard: a delivery carries the customer's signature.
+          && (request.resource.data.status != 'delivered' || !guarded('signature')
+            || request.resource.data.get('receivedSignature', null) is string) && (
+          (staff() && changedOnly(['status', 'updatedDate', 'assignedToId', 'assignedToName', 'receivedSignature', 'receivedBy']))
+          // The assigned deliverer only takes it out and delivers it.
+          || (deliverer() && assignedToMe(resource.data) && changedOnly(['status', 'updatedDate', 'receivedSignature', 'receivedBy'])
+            && request.resource.data.status in ['outForDelivery', 'delivered']));
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    // Wrong-code protection. To quote a delivery code, the deliverer must
-    // first register it here as the next attempt; at most 5 per order.
-    // Owner deletes the doc to unlock.
-    match /codeChecks/{orderId} {
-      allow read: if staff() || (deliverer() && assignedToMe(get(orderPath(orderId)).data));
-      allow create: if deliverer() && assignedToMe(get(orderPath(orderId)).data)
-        && request.resource.data.keys().hasOnly(['lastCode', 'attempts', 'verified'])
-        && request.resource.data.attempts == 1
-        && request.resource.data.verified == false;
-      allow update: if deliverer() && assignedToMe(get(orderPath(orderId)).data) && (
-        // Register the next attempt (max 5).
-        (changedOnly(['lastCode', 'attempts', 'verified'])
-          && request.resource.data.attempts == resource.data.attempts + 1
-          && request.resource.data.attempts <= 5
-          && request.resource.data.verified == false)
-        // Claim the last registered code is right — refused unless it is.
-        || (changedOnly(['verified']) && request.resource.data.verified == true
-          && resource.data.attempts <= 5
-          && resource.data.lastCode == get(/databases/$(database)/documents/deliveryCodes/$(orderId)).data.code));
-      allow delete: if isOwner();
-    }
+      match /customerPayments/{id} {
+        allow read: if staff() || (active() && resource.data.collectedById == request.auth.uid);
 
-    match /customerPayments/{id} {
-      allow read: if staff()
-        || (active() && resource.data.collectedById == request.auth.uid)
-        || (customer() && resource.data.customerId == myCustomerId());
+        allow create: if request.resource.data.collectedById == request.auth.uid
+          && request.resource.data.amount is number && request.resource.data.amount > 0
+          && request.resource.data.get('phoneConfirmedAt', null) == null
+          // Unsigned payments skip the phone check only while that safeguard is off.
+          && (request.resource.data.get('autoConfirmed', false) == false
+            || (request.resource.data.autoConfirmed == true && !guarded('phoneConfirm')))
+          // Signature safeguard: money collected at the door is signed for.
+          && (request.resource.data.orderId == null || !guarded('signature')
+            || request.resource.data.get('signature', null) is string)
+          && request.resource.data.disputedAt == null
+          && request.resource.data.reversedAt == null
+          && (can('recordPayments') || (deliverer() && request.resource.data.orderId is string
+            && assignedToMe(getAfter(orderPath(request.resource.data.orderId)).data)))
+          && (request.resource.data.orderId == null
+            || getAfter(orderPath(request.resource.data.orderId)).data.customerId == request.resource.data.customerId)
+          // Only the till (reconcileCash) may settle, and only its own collection at
+          // creation. Without the handover safeguard every collector does so.
+          && (request.resource.data.settledAt == null
+            || ((can('reconcileCash') || !guarded('handover')) && request.resource.data.settledById == request.auth.uid
+              && request.resource.data.settledAmount == request.resource.data.amount));
 
-      allow create: if request.resource.data.collectedById == request.auth.uid
-        && request.resource.data.amount is number && request.resource.data.amount > 0
-        && request.resource.data.customerConfirmedAt == null
-        && request.resource.data.get('phoneConfirmedAt', null) == null
-        && request.resource.data.disputedAt == null
-        && request.resource.data.reversedAt == null
-        && (can('recordPayments') || (deliverer() && request.resource.data.orderId is string
-          && assignedToMe(getAfter(orderPath(request.resource.data.orderId)).data)))
-        && (request.resource.data.orderId == null
-          || getAfter(orderPath(request.resource.data.orderId)).data.customerId == request.resource.data.customerId)
-        // A quoted delivery code must be the right one.
-        && (request.resource.data.deliveryCode == null
-          || (request.resource.data.orderId is string
-            && request.resource.data.deliveryCode == get(/databases/$(database)/documents/codeChecks/$(request.resource.data.orderId)).data.lastCode
-            && get(/databases/$(database)/documents/codeChecks/$(request.resource.data.orderId)).data.verified == true))
-        // Only the till (reconcileCash) may settle, and only its own collection at creation.
-        && (request.resource.data.settledAt == null
-          || (can('reconcileCash') && request.resource.data.settledById == request.auth.uid
-            && request.resource.data.settledAmount == request.resource.data.amount));
+        allow update: if resource.data.reversedAt == null && (
+          // Handover: counted by someone else (the owner may receive their own;
+          // anyone may without the handover safeguard).
+          (can('reconcileCash') && resource.data.settledAt == null
+            && (resource.data.collectedById != request.auth.uid || isOwner() || !guarded('handover'))
+            && changedOnly(['settledAt', 'settledAmount', 'settledById', 'settledByName'])
+            && request.resource.data.settledById == request.auth.uid
+            && request.resource.data.settledAmount >= 0
+            && request.resource.data.settledAmount <= resource.data.amount)
+          // Unsigned payment: reconcileCash holder (not the collector) phones the
+          // customer and records the answer, once.
+          || (can('reconcileCash') && resource.data.collectedById != request.auth.uid
+            && resource.data.get('phoneConfirmedAt', null) == null
+            && resource.data.disputedAt == null && resource.data.get('signature', null) == null
+            && resource.data.get('autoConfirmed', false) == false
+            && changedOnly(['phoneConfirmedAt', 'phoneConfirmedByName']))
+          || (can('reconcileCash') && resource.data.collectedById != request.auth.uid
+            && resource.data.disputedAt == null
+            && changedOnly(['disputedAt', 'disputeNote', 'disputedByName']))
+          // Owner reverses (a settled one is refunded via the cash ledger).
+          || (isOwner() && changedOnly(['reversedAt', 'reversedByName', 'reversalReason'])));
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-      allow update: if resource.data.reversedAt == null && (
-        // Handover: counted by someone else (the owner may receive their own).
-        (can('reconcileCash') && resource.data.settledAt == null
-          && (resource.data.collectedById != request.auth.uid || isOwner())
-          && changedOnly(['settledAt', 'settledAmount', 'settledById', 'settledByName'])
-          && request.resource.data.settledById == request.auth.uid
-          && request.resource.data.settledAmount >= 0
-          && request.resource.data.settledAmount <= resource.data.amount)
-        // The customer confirms once...
-        || (customer() && resource.data.customerId == myCustomerId()
-          && resource.data.customerConfirmedAt == null && resource.data.disputedAt == null
-          && changedOnly(['customerConfirmedAt']))
-        // ...or disputes once.
-        || (customer() && resource.data.customerId == myCustomerId()
-          && resource.data.disputedAt == null
-          && changedOnly(['disputedAt', 'disputeNote', 'disputedByName']))
-        // Customer without the app: owner/accountant (not the collector)
-        // phones them and records the answer.
-        || (can('reconcileCash') && resource.data.collectedById != request.auth.uid
-          && resource.data.customerConfirmedAt == null && resource.data.get('phoneConfirmedAt', null) == null
-          && resource.data.disputedAt == null && resource.data.deliveryCode == null && resource.data.get('signature', null) == null
-          && changedOnly(['phoneConfirmedAt', 'phoneConfirmedByName']))
-        || (can('reconcileCash') && resource.data.collectedById != request.auth.uid
-          && resource.data.disputedAt == null
-          && changedOnly(['disputedAt', 'disputeNote', 'disputedByName']))
-        // Owner reverses (a settled one is refunded via the cash ledger).
-        || (isOwner() && changedOnly(['reversedAt', 'reversedByName', 'reversalReason'])));
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
+      match /auditLog/{id} {
+        allow read: if isOwner();
+        allow create: if active() && request.resource.data.userId == request.auth.uid;
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
 
-    match /auditLog/{id} {
-      allow read: if isOwner();
-      allow create: if active() && request.resource.data.userId == request.auth.uid;
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
-    }
-
-    match /notifications/{id} {
-      allow read: if staff() || (active() && resource.data.targetUserId == request.auth.uid);
-      allow create: if active();
-      allow update: if changedOnly(['read'])
-        && (staff() || (active() && resource.data.targetUserId == request.auth.uid));
-      allow delete: if isOwner(); // business reset only (Settings → Danger zone)
+      match /notifications/{id} {
+        allow read: if staff() || (active() && resource.data.targetUserId == request.auth.uid);
+        allow create: if active();
+        allow update: if changedOnly(['read'])
+          && (staff() || (active() && resource.data.targetUserId == request.auth.uid));
+        allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
+      }
     }
   }
 }

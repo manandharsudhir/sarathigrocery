@@ -10,7 +10,7 @@ import 'package:sarathigrocery/features/customers/domain/entities/customer.dart'
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_statement.dart';
 
-/// Printable receipts/statements for customers without the app — shared as
+/// Printable receipts/statements for customers — shared as
 /// PDF to WhatsApp/Viber/email, or printed from the share sheet.
 
 pw.Widget _signature(String? encoded, String name) {
@@ -56,12 +56,11 @@ pw.Widget _row(String k, String v) => pw.Padding(
     );
 
 String _verification(CustomerPayment p) {
-  if (p.isReversed) return 'Reversed by ${p.reversedByName}: ${p.reversalReason}';
+  if (p.isReversed) return 'Undone by ${p.reversedByName}: ${p.reversalReason}';
   if (p.isDisputed) return 'Disputed: "${p.disputeNote}"';
-  if (p.confirmedByCode) return 'Confirmed by customer (delivery code)';
   if (p.confirmedBySignature) return 'Signed by customer';
   if (p.phoneConfirmedAt != null) return 'Confirmed by phone with ${p.phoneConfirmedByName}';
-  if (p.customerConfirmedAt != null) return 'Confirmed by customer in app';
+  if (p.autoConfirmed) return 'Recorded by ${p.collectedByName}';
   return 'Not yet confirmed by customer';
 }
 
@@ -95,13 +94,13 @@ Future<Uint8List> statementPdf(Customer customer, CustomerStatement statement, {
       _header(businessName, 'Statement · ${customer.name} · ${formatDate(DateTime.now())}'),
       _row('Current balance', formatNpr(customer.outstandingBalance)),
       _row('Credit limit', formatNpr(customer.creditLimit)),
-      if (!statement.balanced) pw.Text('Note: balance differs from records by ${formatNpr(statement.unexplainedDifference)}.', style: const pw.TextStyle(color: PdfColors.red)),
+      if (!statement.balanced) pw.Text("Note: balance doesn't add up, check records (difference ${formatNpr(statement.unexplainedDifference)}).", style: const pw.TextStyle(color: PdfColors.red)),
       pw.SizedBox(height: 12),
       pw.TableHelper.fromTextArray(
         headers: ['Date', 'Entry', 'Change', 'Balance'],
         cellAlignments: {2: pw.Alignment.centerRight, 3: pw.Alignment.centerRight},
         data: [
-          ['', 'Opening balance', '', formatNpr(statement.opening)],
+          ['', 'Old udharo (before app)', '', formatNpr(statement.opening)],
           for (final l in statement.lines)
             [
               formatDate(l.date),

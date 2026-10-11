@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:sarathigrocery/core/services/app_signal.dart';
+import 'package:sarathigrocery/features/accounting/domain/books.dart';
 import 'package:sarathigrocery/features/audit/domain/repositories/audit_repository.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/adjustment_type.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product_pack.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product_unit.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/stock_adjustment.dart';
 import 'package:sarathigrocery/features/inventory/domain/repositories/product_repository.dart';
@@ -12,11 +14,12 @@ import 'package:sarathigrocery/features/inventory/domain/usecases/update_product
 import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
 
 class InventoryController extends ChangeNotifier {
-  InventoryController(this._products, AuditRepository audit, NotificationRepository notifications)
-      : _adjustStock = AdjustStock(_products, audit, notifications),
-        _updateProductUseCase = UpdateProduct(_products, audit);
+  InventoryController(this._products, AuditRepository audit, NotificationRepository notifications, this._books)
+      : _adjustStock = AdjustStock(_products, audit, notifications, _books),
+        _updateProductUseCase = UpdateProduct(_products, audit, _books);
 
   final ProductRepository _products;
+  final Books _books;
   final AdjustStock _adjustStock;
   final UpdateProduct _updateProductUseCase;
 
@@ -50,22 +53,25 @@ class InventoryController extends ChangeNotifier {
     required String category,
     required double unitPrice,
     double purchasePrice = 0,
-    double? retailPrice,
-    required int stockQty,
-    required int reorderLevel,
+    List<ProductPack> packs = const [],
+    required double stockQty,
+    required double reorderLevel,
     String sku = '',
     String brand = '',
     ProductUnit unit = ProductUnit.piece,
     String customUnitLabel = '',
     String description = '',
     DateTime? expiryDate,
+    bool vatExempt = false,
+    String primaryUnit = '',
+    String saleUnit = '',
   }) {
     final product = _products.createProduct(
       name: name,
       category: category,
       unitPrice: unitPrice,
       purchasePrice: purchasePrice,
-      retailPrice: retailPrice,
+      packs: packs,
       stockQty: stockQty,
       reorderLevel: reorderLevel,
       sku: sku,
@@ -74,7 +80,12 @@ class InventoryController extends ChangeNotifier {
       customUnitLabel: customUnitLabel,
       description: description,
       expiryDate: expiryDate,
+      vatExempt: vatExempt,
+      primaryUnit: primaryUnit,
+      saleUnit: saleUnit,
     );
+    // Goods already on hand when added are part of opening capital.
+    if (stockQty > 0) _books.openingStock(product);
     notifyListeners();
     AppSignal.instance.ping();
     return product;
@@ -87,8 +98,8 @@ class InventoryController extends ChangeNotifier {
     String? category,
     double? unitPrice,
     double? purchasePrice,
-    double? retailPrice,
-    int? reorderLevel,
+    List<ProductPack>? packs,
+    double? reorderLevel,
     String? sku,
     String? brand,
     ProductUnit? unit,
@@ -96,6 +107,9 @@ class InventoryController extends ChangeNotifier {
     String? description,
     bool? isActive,
     DateTime? expiryDate,
+    bool? vatExempt,
+    String? primaryUnit,
+    String? saleUnit,
   }) {
     _updateProductUseCase(
       product,
@@ -104,7 +118,7 @@ class InventoryController extends ChangeNotifier {
       category: category,
       unitPrice: unitPrice,
       purchasePrice: purchasePrice,
-      retailPrice: retailPrice,
+      packs: packs,
       reorderLevel: reorderLevel,
       sku: sku,
       brand: brand,
@@ -113,12 +127,15 @@ class InventoryController extends ChangeNotifier {
       description: description,
       isActive: isActive,
       expiryDate: expiryDate,
+      vatExempt: vatExempt,
+      primaryUnit: primaryUnit,
+      saleUnit: saleUnit,
     );
     notifyListeners();
     AppSignal.instance.ping();
   }
 
-  void adjustStock(Product product, AdjustmentType type, int qty, String note, {required String userName}) {
+  void adjustStock(Product product, AdjustmentType type, double qty, String note, {required String userName}) {
     _adjustStock(product, type, qty, note, userName: userName);
     notifyListeners();
     AppSignal.instance.ping();

@@ -2,10 +2,21 @@ import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/app/widgets/dashboard_actions.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/core/widgets/metric_card.dart';
+import 'package:sarathigrocery/features/accounting/presentation/controllers/accounting_controller.dart';
+import 'package:sarathigrocery/features/accounting/presentation/pages/accounting_screen.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
+import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
+import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
+import 'package:sarathigrocery/features/cash/presentation/pages/cash_screen.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/credit_status.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/customers_screen.dart';
 import 'package:sarathigrocery/features/customers/presentation/pages/my_collections_screen.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/payments_screen.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/dashboard_nav.dart';
+import 'package:sarathigrocery/features/dashboard/presentation/widgets/attention_tile.dart';
 import 'package:sarathigrocery/features/dashboard/presentation/widgets/section_header.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
@@ -16,9 +27,13 @@ import 'package:sarathigrocery/features/ordering/presentation/pages/order_detail
 import 'package:sarathigrocery/features/sales/domain/entities/sale_status.dart';
 import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
 import 'package:sarathigrocery/features/sales/presentation/pages/new_sale_screen.dart';
+import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
+import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
+import 'package:sarathigrocery/features/settings/presentation/controllers/settings_controller.dart';
 
 /// Shop-floor home: what to do next, not what the business is worth.
-/// Everything here is one tap from the action that clears it.
+/// Everything here is one tap from the action that clears it. Staff who can
+/// handle cash & accounts (`reconcileCash`) also get the money sections.
 class EmployeeDashboard extends StatelessWidget {
   const EmployeeDashboard({
     super.key,
@@ -26,8 +41,12 @@ class EmployeeDashboard extends StatelessWidget {
     required this.ordering,
     required this.inventory,
     required this.customers,
+    required this.cash,
+    required this.accounting,
+    required this.suppliers,
     required this.auth,
     required this.notifications,
+    required this.settings,
     this.nav = const DashboardNav(),
   });
 
@@ -35,8 +54,12 @@ class EmployeeDashboard extends StatelessWidget {
   final OrderingController ordering;
   final InventoryController inventory;
   final CustomersController customers;
+  final CashController cash;
+  final SuppliersController suppliers;
   final AuthController auth;
   final NotificationRepository notifications;
+  final SettingsController settings;
+  final AccountingController accounting;
   final DashboardNav nav;
 
   @override
@@ -87,7 +110,7 @@ class EmployeeDashboard extends StatelessWidget {
                 child: ListTile(
                   leading: const Icon(Icons.account_balance_wallet_outlined),
                   title: Text('You hold ${formatNpr(holding.fold(0.0, (s, p) => s + p.amount))} to hand over'),
-                  subtitle: Text('${holding.length} collection${holding.length == 1 ? '' : 's'} not yet received by the owner/accountant'),
+                  subtitle: Text('${holding.length} collection${holding.length == 1 ? '' : 's'} with you, not yet counted in at the shop'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MyCollectionsScreen(payments: customers.payments, auth: auth))),
                 ),
@@ -114,6 +137,8 @@ class EmployeeDashboard extends StatelessWidget {
             ),
           ),
         ),
+
+        if (auth.currentUser?.can(Permission.reconcileCash) ?? false) ..._moneySlivers(context),
 
         SliverToBoxAdapter(
           child: Row(
@@ -168,9 +193,9 @@ class EmployeeDashboard extends StatelessWidget {
                 .map((p) => ListTile(
                       leading: const Icon(Icons.inventory_2_outlined, color: Colors.red),
                       title: Text(p.name),
-                      subtitle: Text('Reorder level ${p.reorderLevel}'),
+                      subtitle: Text('Reorder level ${p.describeQty(p.reorderLevel)}'),
                       trailing: Text(
-                        '${p.availableStock} left',
+                        '${p.describeQty(p.availableStock)} left',
                         style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
                       ),
                       onTap: nav.openInventory,
@@ -181,6 +206,97 @@ class EmployeeDashboard extends StatelessWidget {
         const SliverPadding(padding: EdgeInsets.only(bottom: 96)),
       ],
     );
+  }
+
+  /// Cash & accounts: today's money, what needs counting or chasing, and the
+  /// latest cash-ledger rows (money that actually moved).
+  List<Widget> _moneySlivers(BuildContext context) {
+    final today = DateTime.now();
+    bool isToday(DateTime d) => d.year == today.year && d.month == today.month && d.day == today.day;
+    final collectedToday = cash.ledger.where((e) => e.type == CashEntryType.collection && isToday(e.date)).fold(0.0, (sum, e) => sum + e.amount);
+    final day = todayPeriod();
+    final profitLoss = accounting.statements.profitAndLoss(day.from, day.to).profit;
+    final overdue = customers.customers.where((c) => c.creditStatus == CreditStatus.overdue).length;
+    final toReceive = customers.payments.pendingHandover;
+    final hasSuppliers = settings.has(Feature.suppliers);
+    final suppliersOwed = hasSuppliers ? suppliers.suppliers.where((s) => s.amountPayable > 0).length : 0;
+    final recent = cash.ledger.reversed.take(6).toList();
+
+    void openLedger([int tab = 0]) => Navigator.push(context, MaterialPageRoute(builder: (_) => CashScreen(controller: cash, accounting: accounting, auth: auth, initialTabIndex: tab)));
+    void openCustomers() => Navigator.push(context, MaterialPageRoute(builder: (_) => CustomersScreen(controller: customers, auth: auth)));
+
+    return [
+      const SliverToBoxAdapter(child: SectionHeader('Money')),
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        sliver: SliverGrid.count(
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.3,
+          children: [
+            MetricCard(label: 'Collected Today', value: formatNpr(collectedToday), color: Colors.teal, icon: Icons.call_received, onTap: () => openLedger()),
+            MetricCard(label: "Today's Expenses", value: formatNpr(cash.todayExpenses), color: Colors.purple, icon: Icons.receipt_long, onTap: () => openLedger(1)),
+            MetricCard(label: 'Cash in Hand', value: formatNpr(cash.cashInHand), color: Colors.blue, icon: Icons.payments, onTap: () => openLedger()),
+            MetricCard(label: 'Customer Receivables', value: formatNpr(customers.totalOutstanding), color: Colors.orange, icon: Icons.call_received, onTap: openCustomers),
+            if (hasSuppliers) MetricCard(label: 'Supplier Payables', value: formatNpr(suppliers.totalPayable), color: Colors.deepOrange, icon: Icons.call_made),
+            MetricCard(
+              label: "Today's Profit",
+              value: formatNpr(profitLoss),
+              color: profitLoss >= 0 ? Colors.green : Colors.red,
+              icon: Icons.insights,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AccountingScreen(controller: accounting, auth: auth, suppliers: suppliers))),
+            ),
+          ],
+        ),
+      ),
+      if (overdue > 0 || suppliersOwed > 0 || toReceive.isNotEmpty) ...[
+        const SliverToBoxAdapter(child: SectionHeader('Needs Attention')),
+        SliverList.list(
+          children: [
+            if (toReceive.isNotEmpty)
+              AttentionTile(
+                icon: Icons.account_balance_wallet_outlined,
+                color: Colors.orange,
+                label: '${formatNpr(toReceive.fold(0.0, (s, p) => s + p.amount))} with staff, not yet counted in',
+                actionLabel: 'Count cash in',
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentsScreen(payments: customers.payments, auth: auth))),
+              ),
+            if (overdue > 0)
+              AttentionTile(
+                icon: Icons.person_off_outlined,
+                color: Colors.red,
+                label: '$overdue ${overdue == 1 ? 'customer is' : 'customers are'} over their credit limit',
+                actionLabel: 'Collect',
+                onTap: openCustomers,
+              ),
+            if (suppliersOwed > 0)
+              AttentionTile(
+                icon: Icons.call_made,
+                color: Colors.deepOrange,
+                label: '$suppliersOwed ${suppliersOwed == 1 ? 'supplier is' : 'suppliers are'} awaiting payment',
+                actionLabel: 'Review',
+                onTap: () => openLedger(),
+              ),
+          ],
+        ),
+      ],
+      const SliverToBoxAdapter(child: SectionHeader('Recent Transactions')),
+      SliverList.list(
+        children: recent.isEmpty
+            ? [const ListTile(dense: true, title: Text('No transactions recorded yet.'))]
+            : recent.map((e) {
+                final color = e.isOutflow ? Colors.red : Colors.green;
+                return ListTile(
+                  dense: true,
+                  leading: Icon(e.isOutflow ? Icons.arrow_upward : Icons.arrow_downward, size: 18, color: color),
+                  title: Text(e.note),
+                  subtitle: Text(formatDate(e.date)),
+                  trailing: Text('${e.isOutflow ? '-' : '+'}${formatNpr(e.amount)}', style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+                );
+              }).toList(),
+      ),
+    ];
   }
 }
 
@@ -265,12 +381,7 @@ class _OrderQueueCard extends StatelessWidget {
                 children: [
                   if (next != null)
                     Expanded(
-                      child: FilledButton(
-                        onPressed: () => next == OrderStatus.delivered
-                            ? showDeliverSheet(context, order, ordering, auth)
-                            : ordering.advanceOrderStatus(order, next, userName: auth.currentUser?.name ?? '', userId: auth.currentUser?.id),
-                        child: Text(next == OrderStatus.delivered ? 'Deliver & Collect' : 'Mark ${orderStatusLabel(next)}'),
-                      ),
+                      child: NextOrderButton(order: order, ordering: ordering, auth: auth),
                     ),
                   if (next != null) const SizedBox(width: 8),
                   OutlinedButton(

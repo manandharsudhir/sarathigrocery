@@ -9,9 +9,8 @@ class Customer {
     required this.creditLimit,
     this.outstandingBalance = 0,
     this.lastPaymentDate,
-    this.defaultDiscountPercent = 0,
     this.openingBalance,
-    this.hasAppLogin = false,
+    this.pan = '',
   });
 
   final String id;
@@ -21,18 +20,15 @@ class Customer {
   double creditLimit;
   double outstandingBalance;
   DateTime? lastPaymentDate;
-  double defaultDiscountPercent;
+
+  /// PAN/VAT number, printed on tax invoices.
+  String pan;
 
   /// Udharo carried in when the customer was added (before any bill or
   /// payment in this app). Null for records created before this existed.
   /// Lets the statement prove `outstandingBalance` = opening + bills −
   /// payments, so an unexplained change to a balance is visible.
   final double? openingBalance;
-
-  /// Whether this customer has their own app login. Without one they can't
-  /// see delivery codes or confirm payments in the app, so deliveries need
-  /// their signature and payments are confirmed by a phone call instead.
-  bool hasAppLogin;
 
   CreditStatus get creditStatus {
     if (outstandingBalance > creditLimit) return CreditStatus.overdue;

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
+import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
 import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
@@ -71,10 +72,11 @@ class SupplierDetailScreen extends StatelessWidget {
   void _showPaySheet(BuildContext context) {
     final amountController = TextEditingController();
     final noteController = TextEditingController();
+    var account = 'cash';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => Padding(
+      builder: (context) => StatefulBuilder(builder: (context, setSheetState) => Padding(
         padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -85,6 +87,12 @@ class SupplierDetailScreen extends StatelessWidget {
             TextField(controller: amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount (NPR)')),
             const SizedBox(height: 8),
             TextField(controller: noteController, decoration: const InputDecoration(labelText: 'Note (optional)')),
+            DropdownButtonFormField<String>(
+              initialValue: account,
+              decoration: const InputDecoration(labelText: 'Paid from'),
+              items: [for (final a in cash.moneyAccounts) DropdownMenuItem(value: a, child: Text(accountName(a)))],
+              onChanged: (v) => setSheetState(() => account = v ?? account),
+            ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -92,7 +100,7 @@ class SupplierDetailScreen extends StatelessWidget {
                 onPressed: () {
                   final amount = double.tryParse(amountController.text) ?? 0;
                   if (amount <= 0) return;
-                  controller.recordPayment(supplier, amount, noteController.text, userName: auth.currentUser?.name ?? '');
+                  controller.recordPayment(supplier, amount, noteController.text, userName: auth.currentUser?.name ?? '', account: account);
                   Navigator.pop(context);
                 },
                 child: const Text('Record Payment'),
@@ -100,7 +108,7 @@ class SupplierDetailScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 }

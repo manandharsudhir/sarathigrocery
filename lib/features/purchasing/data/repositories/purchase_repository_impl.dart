@@ -16,8 +16,12 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
           toJson: (p) => {
             'date': toMillis(p.date),
             'supplierId': p.supplier.id,
-            'items': [for (final i in p.items) {'productId': i.product.id, 'qty': i.qty, 'unitCost': i.unitCost}],
+            'items': [for (final i in p.items) {'productId': i.product.id, 'qty': i.qty, 'unitCost': i.unitCost, 'unit': i.unit, 'size': i.size}],
             'paidAmount': p.paidAmount,
+            'account': p.account,
+            'vatAmount': p.vatAmount,
+            'supplierBillNo': p.supplierBillNo,
+            'supplierBillDate': p.supplierBillDate == null ? null : toMillis(p.supplierBillDate!),
           },
           fromJson: (j) {
             final supplier = suppliers.byId(j['supplierId']);
@@ -26,9 +30,19 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
             for (final i in (j['items'] as List? ?? const [])) {
               final product = products.byId(i['productId']);
               if (product == null) return null;
-              items.add(PurchaseItem(product: product, qty: toInt(i['qty']), unitCost: toDouble(i['unitCost'])));
+              items.add(PurchaseItem(product: product, qty: toDouble(i['qty']), unitCost: toDouble(i['unitCost']), unit: i['unit'], size: i['size'] == null ? 1 : toDouble(i['size'])));
             }
-            return Purchase(id: j['id'], date: fromMillis(j['date']), supplier: supplier, items: items, paidAmount: toDouble(j['paidAmount']));
+            return Purchase(
+              id: j['id'],
+              date: fromMillis(j['date']),
+              supplier: supplier,
+              items: items,
+              paidAmount: toDouble(j['paidAmount']),
+              account: j['account'] ?? 'cash',
+              vatAmount: toDouble(j['vatAmount']),
+              supplierBillNo: j['supplierBillNo'] ?? '',
+              supplierBillDate: fromMillisOrNull(j['supplierBillDate']),
+            );
           },
           merge: (p, j) => p.paidAmount = toDouble(j['paidAmount']),
         ),
@@ -47,7 +61,7 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
             final supplier = suppliers.byId(j['supplierId']);
             final product = products.byId(j['productId']);
             if (supplier == null || product == null) return null;
-            return PurchaseReturn(id: j['id'], date: fromMillis(j['date']), supplier: supplier, product: product, qty: toInt(j['qty']), unitCost: toDouble(j['unitCost']), reason: j['reason'] ?? '');
+            return PurchaseReturn(id: j['id'], date: fromMillis(j['date']), supplier: supplier, product: product, qty: toDouble(j['qty']), unitCost: toDouble(j['unitCost']), reason: j['reason'] ?? '');
           },
         );
 
@@ -63,8 +77,19 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
   List<PurchaseReturn> get purchaseReturns => _returns.items;
 
   @override
-  Purchase record(Supplier supplier, List<PurchaseItem> items, double paidAmount) {
-    final purchase = Purchase(id: nextId('PU'), date: DateTime.now(), supplier: supplier, items: items, paidAmount: paidAmount);
+  Purchase record(Supplier supplier, List<PurchaseItem> items, double paidAmount,
+      {String account = 'cash', double vatAmount = 0, String supplierBillNo = '', DateTime? supplierBillDate}) {
+    final purchase = Purchase(
+      id: nextId('PU'),
+      date: DateTime.now(),
+      supplier: supplier,
+      items: items,
+      paidAmount: paidAmount,
+      account: account,
+      vatAmount: vatAmount,
+      supplierBillNo: supplierBillNo,
+      supplierBillDate: supplierBillDate,
+    );
     _purchases.add(purchase);
     return purchase;
   }

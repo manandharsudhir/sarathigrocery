@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/adjustment_type.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
@@ -8,8 +10,9 @@ import 'package:sarathigrocery/features/purchasing/presentation/controllers/purc
 import 'package:sarathigrocery/features/sales/domain/entities/sale_status.dart';
 import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
 import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
+import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
+import 'package:sarathigrocery/features/settings/presentation/controllers/settings_controller.dart';
 
-double _profitLoss(SalesController sales, CashController cash) => sales.totalRevenue - sales.totalCostOfGoods - cash.totalExpensesAllTime;
 
 class ReportsScreen extends StatelessWidget {
   const ReportsScreen({
@@ -20,6 +23,8 @@ class ReportsScreen extends StatelessWidget {
     required this.inventory,
     required this.customers,
     required this.suppliers,
+    required this.settings,
+    required this.accounts,
   });
 
   final SalesController sales;
@@ -28,20 +33,25 @@ class ReportsScreen extends StatelessWidget {
   final InventoryController inventory;
   final CustomersController customers;
   final SuppliersController suppliers;
+  final SettingsController settings;
+
+  /// Profit & Loss, Balance Sheet and the rest live in Accounts.
+  final WidgetBuilder accounts;
 
   @override
   Widget build(BuildContext context) {
+    final hasSuppliers = settings.has(Feature.suppliers);
     final reports = <(String, IconData, WidgetBuilder)>[
       ('Sales Report', Icons.point_of_sale, (_) => _SalesReportScreen(sales: sales)),
       ('Sales by Product', Icons.inventory_2_outlined, (_) => _SalesByProductScreen(sales: sales)),
       ('Sales by Customer', Icons.people_outline, (_) => _SalesByCustomerScreen(sales: sales)),
-      ('Purchase Report', Icons.local_shipping_outlined, (_) => _PurchaseReportScreen(purchasing: purchasing)),
+      if (hasSuppliers) ('Purchase Report', Icons.local_shipping_outlined, (_) => _PurchaseReportScreen(purchasing: purchasing)),
       ('Expense Report', Icons.receipt_long_outlined, (_) => _ExpenseReportScreen(cash: cash)),
-      ('Profit & Loss', Icons.trending_up, (_) => _ProfitLossScreen(sales: sales, cash: cash)),
+      ('Profit & Loss and Balance Sheet', Icons.trending_up, accounts),
       ('Inventory Report', Icons.warehouse_outlined, (_) => _InventoryReportScreen(inventory: inventory)),
       ('Stock Movement', Icons.swap_vert, (_) => _StockMovementScreen(inventory: inventory, purchasing: purchasing, sales: sales)),
       ('Customer Outstanding', Icons.call_received, (_) => _CustomerOutstandingScreen(customers: customers)),
-      ('Supplier Outstanding', Icons.call_made, (_) => _SupplierOutstandingScreen(suppliers: suppliers)),
+      if (hasSuppliers) ('Supplier Outstanding', Icons.call_made, (_) => _SupplierOutstandingScreen(suppliers: suppliers)),
       ('Payment Report', Icons.payments_outlined, (_) => _PaymentReportScreen(cash: cash)),
       ('Best-Selling Products', Icons.star_outline, (_) => _BestSellingScreen(sales: sales)),
       ('Employee Performance', Icons.badge_outlined, (_) => _EmployeePerformanceScreen(sales: sales)),
@@ -152,11 +162,11 @@ class _SalesByProductScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, (int, double)> byProduct = {};
+    final Map<Product, (double, double)> byProduct = {};
     for (final s in sales.sales.where((s) => s.status == SaleStatus.completed)) {
       for (final item in s.items) {
-        final existing = byProduct[item.product.name] ?? (0, 0.0);
-        byProduct[item.product.name] = (existing.$1 + item.qty, existing.$2 + item.lineTotal);
+        final existing = byProduct[item.product] ?? (0.0, 0.0);
+        byProduct[item.product] = (existing.$1 + item.baseQty, existing.$2 + item.lineTotal);
       }
     }
     final rows = byProduct.entries.toList()..sort((a, b) => b.value.$2.compareTo(a.value.$2));
@@ -164,7 +174,7 @@ class _SalesByProductScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Sales by Product')),
       body: ListView(
         padding: const EdgeInsets.all(16),
-        children: rows.map((e) => ListTile(title: Text(e.key), subtitle: Text('${e.value.$1} units sold'), trailing: Text(formatNpr(e.value.$2)))).toList(),
+        children: rows.map((e) => ListTile(title: Text(e.key.name), subtitle: Text('${e.key.describeQty(e.value.$1)} sold'), trailing: Text(formatNpr(e.value.$2)))).toList(),
       ),
     );
   }
@@ -256,36 +266,6 @@ class _ExpenseReportScreenState extends State<_ExpenseReportScreen> {
   }
 }
 
-class _ProfitLossScreen extends StatelessWidget {
-  const _ProfitLossScreen({required this.sales, required this.cash});
-  final SalesController sales;
-  final CashController cash;
-
-  @override
-  Widget build(BuildContext context) {
-    final profitLoss = _profitLoss(sales, cash);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Profit & Loss')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          ListTile(title: const Text('Total Revenue'), trailing: Text(formatNpr(sales.totalRevenue))),
-          ListTile(title: const Text('Cost of Goods Sold'), trailing: Text('- ${formatNpr(sales.totalCostOfGoods)}')),
-          ListTile(title: const Text('Expenses'), trailing: Text('- ${formatNpr(cash.totalExpensesAllTime)}')),
-          const Divider(),
-          ListTile(
-            title: const Text('Net Profit / Loss', style: TextStyle(fontWeight: FontWeight.bold)),
-            trailing: Text(
-              formatNpr(profitLoss),
-              style: TextStyle(fontWeight: FontWeight.bold, color: profitLoss >= 0 ? Colors.green : Colors.red),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _InventoryReportScreen extends StatelessWidget {
   const _InventoryReportScreen({required this.inventory});
   final InventoryController inventory;
@@ -298,9 +278,9 @@ class _InventoryReportScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: inventory.products.map((p) => ListTile(
               title: Text(p.name),
-              subtitle: Text('${p.category} · reorder at ${p.reorderLevel}'),
+              subtitle: Text('${p.category} · reorder at ${formatQty(p.reorderLevel)} ${p.unitLabel}'),
               trailing: Text(
-                '${p.stockQty} in stock',
+                '${p.describeQty(p.stockQty)} in stock',
                 style: TextStyle(color: p.isLowStock ? Colors.red : null, fontWeight: p.isLowStock ? FontWeight.bold : null),
               ),
             )).toList(),
@@ -318,9 +298,9 @@ class _StockMovementScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = <MapEntry<DateTime, String>>[
-      ...inventory.adjustments.map((a) => MapEntry(a.date, '${a.type.name} · ${a.product.name} · -${a.qty}')),
-      ...purchasing.purchases.expand((p) => p.items.map((i) => MapEntry(p.date, 'Purchase · ${i.product.name} · +${i.qty}'))),
-      ...sales.sales.where((s) => s.status == SaleStatus.completed).expand((s) => s.items.map((i) => MapEntry(s.date, 'Sale · ${i.product.name} · -${i.qty}'))),
+      ...inventory.adjustments.map((a) => MapEntry(a.date, '${a.type.name} · ${a.product.name} · ${a.type == AdjustmentType.returned ? '+' : '-'}${formatQty(a.qty)} ${a.product.unitLabel}')),
+      ...purchasing.purchases.expand((p) => p.items.map((i) => MapEntry(p.date, 'Purchase · ${i.product.name} · +${formatQty(i.qty)} ${i.unit}'))),
+      ...sales.sales.where((s) => s.status == SaleStatus.completed).expand((s) => s.items.map((i) => MapEntry(s.date, 'Sale · ${i.product.name} · -${formatQty(i.qty)} ${i.unit}'))),
     ]..sort((a, b) => b.key.compareTo(a.key));
 
     return Scaffold(
@@ -388,7 +368,7 @@ class _PaymentReportScreenState extends State<_PaymentReportScreen> {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(16),
-              children: entries.map((e) => ListTile(dense: true, title: Text(e.note), subtitle: Text('${e.account.name} · ${e.type.name} · ${formatDate(e.date)}'), trailing: Text('${e.isOutflow ? '-' : '+'}${formatNpr(e.amount)}'))).toList(),
+              children: entries.map((e) => ListTile(dense: true, title: Text(e.note), subtitle: Text('${e.account} · ${e.type.name} · ${formatDate(e.date)}'), trailing: Text('${e.isOutflow ? '-' : '+'}${formatNpr(e.amount)}'))).toList(),
             ),
           ),
         ],
@@ -403,10 +383,10 @@ class _BestSellingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Map<String, int> qtyByProduct = {};
+    final Map<Product, double> qtyByProduct = {};
     for (final s in sales.sales.where((s) => s.status == SaleStatus.completed)) {
       for (final item in s.items) {
-        qtyByProduct[item.product.name] = (qtyByProduct[item.product.name] ?? 0) + item.qty;
+        qtyByProduct[item.product] = (qtyByProduct[item.product] ?? 0) + item.baseQty;
       }
     }
     final rows = qtyByProduct.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
@@ -417,8 +397,8 @@ class _BestSellingScreen extends StatelessWidget {
         itemCount: rows.length,
         itemBuilder: (context, index) => ListTile(
           leading: CircleAvatar(child: Text('${index + 1}')),
-          title: Text(rows[index].key),
-          trailing: Text('${rows[index].value} units'),
+          title: Text(rows[index].key.name),
+          trailing: Text(rows[index].key.describeQty(rows[index].value)),
         ),
       ),
     );

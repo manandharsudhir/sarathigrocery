@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/core/widgets/empty_state.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
@@ -22,10 +23,12 @@ class PurchasesScreen extends StatelessWidget {
       listenable: purchasing,
       builder: (context, _) {
         final purchases = purchasing.purchases.reversed.toList();
+        final canBuy = auth.can(Permission.createPurchases) && suppliers.suppliers.isNotEmpty;
+        void newPurchase() => Navigator.push(context, MaterialPageRoute(builder: (_) => NewPurchaseScreen(purchasing: purchasing, suppliers: suppliers, inventory: inventory, auth: auth)));
         return Scaffold(
           appBar: AppBar(title: const Text('Purchases')),
           body: purchases.isEmpty
-              ? const Center(child: Text('No purchases recorded yet.'))
+              ? EmptyState(message: 'No purchases recorded yet.', actionLabel: 'New purchase', onAction: canBuy ? newPurchase : null)
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                   itemCount: purchases.length,
@@ -47,11 +50,11 @@ class PurchasesScreen extends StatelessWidget {
                     );
                   },
                 ),
-          floatingActionButton: auth.can(Permission.createPurchases) && suppliers.suppliers.isNotEmpty
+          floatingActionButton: canBuy
               ? FloatingActionButton.extended(heroTag: null, 
                   icon: const Icon(Icons.add),
                   label: const Text('New Purchase'),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => NewPurchaseScreen(purchasing: purchasing, suppliers: suppliers, inventory: inventory, auth: auth))),
+                  onPressed: newPurchase,
                 )
               : null,
         );

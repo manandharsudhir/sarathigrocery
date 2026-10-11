@@ -8,12 +8,15 @@ import 'package:sarathigrocery/features/inventory/domain/entities/adjustment_typ
 import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/inventory/presentation/pages/product_form_screen.dart';
+import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
+import 'package:sarathigrocery/features/settings/presentation/controllers/settings_controller.dart';
 
 class InventoryScreen extends StatefulWidget {
-  const InventoryScreen({super.key, required this.controller, required this.auth});
+  const InventoryScreen({super.key, required this.controller, required this.auth, required this.settings});
 
   final InventoryController controller;
   final AuthController auth;
+  final SettingsController settings;
 
   @override
   State<InventoryScreen> createState() => _InventoryScreenState();
@@ -26,11 +29,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final canManage = widget.auth.can(Permission.manageProducts);
-    final products = controller.products.where((p) {
-      if (_query.isEmpty) return true;
-      final q = _query.toLowerCase();
-      return p.name.toLowerCase().contains(q) || p.category.toLowerCase().contains(q) || p.sku.toLowerCase().contains(q);
-    }).toList();
+    final products = controller.products.where((p) => p.matches(_query)).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Inventory')),
@@ -57,6 +56,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 product: products[index],
                 controller: controller,
                 auth: widget.auth,
+                settings: widget.settings,
                 canManage: canManage,
               ),
             ),
@@ -67,7 +67,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ? FloatingActionButton.extended(heroTag: null, 
               icon: const Icon(Icons.add),
               label: const Text('Add Product'),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProductFormScreen(controller: controller, auth: widget.auth))),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProductFormScreen(controller: controller, auth: widget.auth, settings: widget.settings))),
             )
           : null,
     );
@@ -75,16 +75,18 @@ class _InventoryScreenState extends State<InventoryScreen> {
 }
 
 class _ProductTile extends StatelessWidget {
-  const _ProductTile({required this.product, required this.controller, required this.auth, required this.canManage});
+  const _ProductTile({required this.product, required this.controller, required this.auth, required this.settings, required this.canManage});
 
   final Product product;
   final InventoryController controller;
   final AuthController auth;
+  final SettingsController settings;
   final bool canManage;
 
   @override
   Widget build(BuildContext context) {
     final canAdjust = auth.can(Permission.adjustInventory);
+    final nearExpiry = settings.has(Feature.expiry) && product.isNearExpiry;
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -96,20 +98,20 @@ class _ProductTile extends StatelessWidget {
             ? () => _showActionsSheet(context, canAdjust)
             : (canAdjust ? () => _showAdjustSheet(context) : null),
         title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text('${product.category} · ${formatNpr(product.unitPrice)} / ${product.unitLabel}'),
+        subtitle: Text('${settings.has(Feature.categories) ? '${product.category} · ' : ''}${[for (final u in product.sellUnits) u.price > 0 ? '${formatNpr(u.price)} / ${u.label}' : '${u.label}: ${product.isUnpriced(u.label) ? 'no price yet' : 'at cost'}'].join(' · ')}'),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text('${product.availableStock} in stock'),
+            Text('${product.describeQty(product.availableStock)} in stock'),
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (!product.isActive) const StatusBadge(label: 'Inactive', color: Colors.grey),
                 if (product.isLowStock) const StatusBadge(label: 'Low Stock', color: Colors.red),
-                if (product.isLowStock && product.isNearExpiry) const SizedBox(width: 4),
-                if (product.isNearExpiry) const StatusBadge(label: 'Near Expiry', color: Colors.amber),
+                if (product.isLowStock && nearExpiry) const SizedBox(width: 4),
+                if (nearExpiry) const StatusBadge(label: 'Near Expiry', color: Colors.amber),
               ],
             ),
           ],
@@ -130,7 +132,7 @@ class _ProductTile extends StatelessWidget {
               title: const Text('Edit Product'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                Navigator.push(context, MaterialPageRoute(builder: (_) => ProductFormScreen(controller: controller, auth: auth, product: product)));
+                Navigator.push(context, MaterialPageRoute(builder: (_) => ProductFormScreen(controller: controller, auth: auth, settings: settings, product: product)));
               },
             ),
             if (canAdjust)
@@ -177,8 +179,8 @@ class _ProductTile extends StatelessWidget {
               const SizedBox(height: 12),
               TextField(
                 controller: qtyController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Quantity'),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(labelText: 'Quantity (${product.unitLabel})'),
               ),
               const SizedBox(height: 8),
               TextField(
@@ -190,7 +192,7 @@ class _ProductTile extends StatelessWidget {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: () {
-                    final qty = int.tryParse(qtyController.text) ?? 0;
+                    final qty = double.tryParse(qtyController.text) ?? 0;
                     if (qty <= 0 || noteController.text.trim().isEmpty) return;
                     controller.adjustStock(product, type, qty, noteController.text, userName: auth.currentUser?.name ?? '');
                     Navigator.pop(context);

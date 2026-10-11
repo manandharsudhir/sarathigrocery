@@ -1,5 +1,7 @@
 import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
 
+/// One line of the cash book: money in or out of one money [account]
+/// (`cash`, `bank`, `wallet`, or a named `bank:…`/`wallet:…`).
 class CashLedgerEntry {
   CashLedgerEntry({
     required this.id,
@@ -8,7 +10,7 @@ class CashLedgerEntry {
     required this.amount,
     required this.note,
     this.reference = '',
-    this.account = LedgerAccount.cash,
+    this.account = 'cash',
   });
 
   final String id;
@@ -17,12 +19,10 @@ class CashLedgerEntry {
   final double amount;
   final String note;
   final String reference;
-  final LedgerAccount account;
+  final String account;
 
-  /// Money leaving [account]. A deposit leaves cash but arrives in the bank.
   bool get isOutflow => switch (type) {
-        CashEntryType.expense || CashEntryType.supplierPayment || CashEntryType.refund => true,
-        CashEntryType.deposit => account == LedgerAccount.cash,
+        CashEntryType.expense || CashEntryType.supplierPayment || CashEntryType.refund || CashEntryType.moneyOut => true,
         _ => false,
       };
 

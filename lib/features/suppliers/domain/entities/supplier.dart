@@ -7,6 +7,7 @@ class Supplier {
     required this.address,
     this.productsSupplied = '',
     this.amountPayable = 0,
+    this.pan = '',
   });
 
   final String id;
@@ -16,4 +17,7 @@ class Supplier {
   String address;
   String productsSupplied;
   double amountPayable;
+
+  /// PAN/VAT number, for the Purchase Book.
+  String pan;
 }

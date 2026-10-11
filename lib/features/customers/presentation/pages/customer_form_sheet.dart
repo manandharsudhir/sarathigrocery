@@ -16,11 +16,9 @@ void showCustomerFormSheet(
   final name = TextEditingController(text: existing?.name);
   final phone = TextEditingController(text: existing?.phone);
   final location = TextEditingController(text: existing?.location);
+  final pan = TextEditingController(text: existing?.pan);
   final limit = TextEditingController(
     text: existing?.creditLimit.toStringAsFixed(0),
-  );
-  final discount = TextEditingController(
-    text: existing == null ? '0' : existing.defaultDiscountPercent.toString(),
   );
   final opening = TextEditingController(text: '0');
   // Sales staff (createCustomers only) add customers without credit terms.
@@ -64,38 +62,27 @@ void showCustomerFormSheet(
               controller: location,
               decoration: const InputDecoration(labelText: 'Location'),
             ),
+            TextField(
+              controller: pan,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'PAN / VAT no. (optional, for tax invoices)'),
+            ),
             const SizedBox(height: 8),
             if (!setsTerms)
               const Padding(
                 padding: EdgeInsets.only(top: 4),
                 child: Text(
-                  'Credit limit starts at 0 (cash only). The owner or accountant sets credit terms.',
+                  'Credit limit starts at 0 (cash only). The owner or cash staff set credit terms.',
                   style: TextStyle(color: Colors.grey),
                 ),
               ),
             if (setsTerms)
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: limit,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Credit limit (NPR)',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: discount,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Default discount %',
-                      ),
-                    ),
-                  ),
-                ],
+              TextField(
+                controller: limit,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Credit limit (NPR)',
+                ),
               ),
             if (existing == null && setsTerms) ...[
               const SizedBox(height: 8),
@@ -103,7 +90,7 @@ void showCustomerFormSheet(
                 controller: opening,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'Existing udharo (opening balance, NPR)',
+                  labelText: 'Old udharo (before app, NPR)',
                   helperText:
                       'What they already owe from before. Fixed once saved.',
                 ),
@@ -126,9 +113,6 @@ void showCustomerFormSheet(
                   final creditLimit = setsTerms
                       ? double.tryParse(limit.text.trim())
                       : 0.0;
-                  final discountPercent = setsTerms
-                      ? double.tryParse(discount.text.trim())
-                      : 0.0;
                   if (name.text.trim().isEmpty || phone.text.trim().isEmpty) {
                     setSheetState(() => error = 'Name and phone are required.');
                     return;
@@ -139,14 +123,6 @@ void showCustomerFormSheet(
                     );
                     return;
                   }
-                  if (discountPercent == null ||
-                      discountPercent < 0 ||
-                      discountPercent > 100) {
-                    setSheetState(
-                      () => error = 'Discount must be between 0 and 100.',
-                    );
-                    return;
-                  }
                   final userName = auth.currentUser?.name ?? '';
                   if (existing == null) {
                     controller.createCustomer(
@@ -154,7 +130,7 @@ void showCustomerFormSheet(
                       phone: phone.text.trim(),
                       location: location.text.trim(),
                       creditLimit: creditLimit,
-                      defaultDiscountPercent: discountPercent,
+                      pan: pan.text,
                       openingBalance: openingBalance,
                       by: auth.currentUser!,
                     );
@@ -165,105 +141,13 @@ void showCustomerFormSheet(
                       phone: phone.text.trim(),
                       location: location.text.trim(),
                       creditLimit: creditLimit,
-                      defaultDiscountPercent: discountPercent,
+                      pan: pan.text,
                       userName: userName,
                     );
                   }
                   Navigator.pop(context);
                 },
                 child: Text(existing == null ? 'Add Customer' : 'Save'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-/// Creates the customer's own app login (to browse and place orders).
-void showCreateCustomerLoginSheet(
-  BuildContext context,
-  Customer customer,
-  CustomersController controller,
-  AuthController auth,
-) {
-  final phone = TextEditingController(text: customer.phone);
-  final password = TextEditingController();
-  String? error;
-  var busy = false;
-
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setSheetState) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          16,
-          16,
-          MediaQuery.of(context).viewInsets.bottom + 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'App login for ${customer.name}',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'They will see the product catalogue, their own orders and their own balance only.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: phone,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'Login phone'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: password,
-              decoration: const InputDecoration(
-                labelText: 'Temporary password (min 8 characters)',
-              ),
-            ),
-            if (error != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: busy
-                    ? null
-                    : () async {
-                        setSheetState(() {
-                          busy = true;
-                          error = null;
-                        });
-                        final result = await controller.createLogin(
-                          customer,
-                          phone: phone.text.trim(),
-                          password: password.text,
-                          userName: auth.currentUser?.name ?? '',
-                        );
-                        if (!context.mounted) return;
-                        if (result == null) {
-                          Navigator.pop(context);
-                        } else {
-                          setSheetState(() {
-                            busy = false;
-                            error = result;
-                          });
-                        }
-                      },
-                child: const Text('Create Login'),
               ),
             ),
           ],

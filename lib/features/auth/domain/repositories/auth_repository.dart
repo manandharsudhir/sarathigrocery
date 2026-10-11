@@ -1,21 +1,28 @@
 /// Credentials + session, independent of who stores the business data.
 ///
-/// Users log in with phone + password. Every account has a stable id (the
+/// Users log in with email + password. Every account has a stable id (the
 /// `AppUser` document id); the profile/role lives in `UserRepository`.
-/// Password recovery is by SMS OTP to a phone the user verified earlier.
-/// Swap the implementation to move off Firebase Auth — each method maps to
-/// one endpoint on a custom backend.
+/// Password recovery is a reset link emailed to that address; creating a
+/// shop needs a verified email. Swap the implementation to move off
+/// Firebase Auth — each method maps to one endpoint on a custom backend.
 abstract class AuthRepository {
   /// Account id of the signed-in session (persisted across launches), if any.
   String? get currentAccountId;
 
+  /// Email of the signed-in account, normalised by [normalizeEmail].
+  String? get currentEmail;
+
   /// Account id, or null for wrong/unknown credentials. Throws
   /// [AuthException] for anything else (network, rate limit, ...).
-  Future<String?> signIn(String phone, String password);
+  Future<String?> signIn(String email, String password);
 
-  /// New account's id, or null if [phone] is taken. Doesn't change the
+  /// New account's id, or null if [email] is taken. Doesn't change the
   /// current session, so an owner can add staff while staying signed in.
-  Future<String?> createAccount(String phone, String password);
+  Future<String?> createAccount(String email, String password);
+
+  /// Sign-up: creates the login, signs it in and emails a verification
+  /// link. Throws [AuthException] if [email] already has a login.
+  Future<void> signUp(String email, String password);
 
   Future<void> signOut();
 
@@ -24,22 +31,23 @@ abstract class AuthRepository {
   /// Re-checks the signed-in user's password before a dangerous action.
   Future<bool> verifyPassword(String password);
 
-  /// Whether the signed-in account has proven ownership of its phone —
-  /// required before OTP password reset can work for it.
-  bool get phoneVerified;
+  /// Whether the signed-in account has clicked its verification link (as of
+  /// the last [reloadEmailVerified]).
+  bool get emailVerified;
 
-  /// Sends an OTP to [phone] (the signed-in account's own number); returns a
-  /// verification id for [completePhoneVerification].
-  Future<String> startPhoneVerification(String phone);
+  Future<void> sendEmailVerification();
 
-  Future<void> completePhoneVerification(String verificationId, String code);
+  /// Re-reads [emailVerified] from the backend (and refreshes the token the
+  /// rules see). Returns the new value.
+  Future<bool> reloadEmailVerified();
 
-  /// Signed-out flow: sends an OTP to [phone]; returns a verification id.
-  Future<String> startPasswordReset(String phone);
+  /// Emails a password reset link to [email]. Silently does nothing for an
+  /// unknown address (doesn't reveal which emails have logins).
+  Future<void> sendPasswordReset(String email);
 
-  /// Sets [newPassword] if [code] is right and [phone] belongs to an account
-  /// that verified it. Leaves the user signed out.
-  Future<void> completePasswordReset(String verificationId, String code, String newPassword);
+  /// Deletes the signed-in login for good (re-checking [password] first, as
+  /// Firebase wants a recent sign-in) and signs out. Throws [AuthException].
+  Future<void> deleteAccount(String password);
 }
 
 /// A failure with a user-presentable [message].
@@ -56,101 +64,110 @@ class AuthException implements Exception {
 String? passwordProblem(String password) =>
     password.length < 8 ? 'Password must be at least 8 characters.' : null;
 
-/// In-process [AuthRepository] for tests / backend-less runs. OTPs aren't
-/// sent anywhere; the last one is exposed as [lastOtp]. [forDevice] gives
-/// another device's view: same accounts, its own signed-in session.
+/// Emails are compared and stored trimmed + lowercased.
+String normalizeEmail(String email) => email.trim().toLowerCase();
+
+/// Null = looks like an email.
+String? emailProblem(String email) =>
+    RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email) ? null : 'Enter a valid email address.';
+
+/// In-process [AuthRepository] for tests / backend-less runs. No email is
+/// sent: [verifyEmail] stands in for clicking the link, and
+/// [resetPasswordFor] for following a reset link. [forDevice] gives another
+/// device's view: same accounts, its own signed-in session.
 class InMemoryAuthRepository implements AuthRepository {
   InMemoryAuthRepository() : _shared = _SharedAuthState();
 
   InMemoryAuthRepository._(this._shared);
 
   final _SharedAuthState _shared;
-  String? _currentPhone;
+  String? _current;
+  bool _verified = false;
 
   InMemoryAuthRepository forDevice() => InMemoryAuthRepository._(_shared);
 
   Map<String, ({String id, String password})> get _accounts => _shared.accounts;
 
-  String? get lastOtp => _shared.lastOtp;
+  /// Addresses a reset link was sent to, in order.
+  List<String> get sentResets => _shared.sentResets;
+
+  void verifyEmail(String email) => _shared.verifiedEmails.add(normalizeEmail(email));
+
+  void resetPasswordFor(String email, String newPassword) {
+    final key = normalizeEmail(email);
+    _accounts[key] = (id: _accounts[key]!.id, password: newPassword);
+  }
 
   @override
-  String? get currentAccountId => _accounts[_currentPhone]?.id;
+  String? get currentAccountId => _accounts[_current]?.id;
 
   @override
-  Future<String?> signIn(String phone, String password) async {
-    final account = _accounts[phone];
+  String? get currentEmail => _current;
+
+  @override
+  Future<String?> signIn(String email, String password) async {
+    final key = normalizeEmail(email);
+    final account = _accounts[key];
     if (account == null || account.password != password) return null;
-    _currentPhone = phone;
+    _current = key;
+    _verified = _shared.verifiedEmails.contains(key);
     return account.id;
   }
 
   @override
-  Future<String?> createAccount(String phone, String password) async {
-    if (_accounts.containsKey(phone)) return null;
+  Future<String?> createAccount(String email, String password) async {
+    final key = normalizeEmail(email);
+    if (_accounts.containsKey(key)) return null;
     final id = 'uid${_shared.nextId++}';
-    _accounts[phone] = (id: id, password: password);
+    _accounts[key] = (id: id, password: password);
     return id;
   }
 
   @override
-  Future<void> signOut() async => _currentPhone = null;
+  Future<void> signUp(String email, String password) async {
+    if (await createAccount(email, password) == null) throw AuthException(kEmailTakenMessage);
+    await signIn(email, password);
+  }
+
+  @override
+  Future<void> signOut() async => _current = null;
 
   @override
   Future<void> changePassword(String currentPassword, String newPassword) async {
-    final account = _accounts[_currentPhone];
+    final account = _accounts[_current];
     if (account == null || account.password != currentPassword) throw AuthException('Current password is incorrect.');
-    _accounts[_currentPhone!] = (id: account.id, password: newPassword);
+    _accounts[_current!] = (id: account.id, password: newPassword);
   }
 
   @override
-  Future<bool> verifyPassword(String password) async => _accounts[_currentPhone]?.password == password;
+  Future<bool> verifyPassword(String password) async => _accounts[_current]?.password == password;
 
   @override
-  bool get phoneVerified => _shared.verifiedPhones.contains(_currentPhone);
-
-  String _sendOtp(String phone) {
-    final n = _shared.nextId++;
-    final id = 'v$n';
-    _shared.lastOtp = '${100000 + n}';
-    _shared.otps[id] = (phone: phone, code: _shared.lastOtp!);
-    return id;
-  }
-
-  String _checkOtp(String verificationId, String code) {
-    final otp = _shared.otps.remove(verificationId);
-    if (otp == null || otp.code != code) throw AuthException('Incorrect or expired code.');
-    return otp.phone;
-  }
+  bool get emailVerified => _current != null && _verified;
 
   @override
-  Future<String> startPhoneVerification(String phone) async => _sendOtp(phone);
+  Future<void> sendEmailVerification() async {}
 
   @override
-  Future<void> completePhoneVerification(String verificationId, String code) async {
-    final phone = _checkOtp(verificationId, code);
-    if (phone != _currentPhone) throw AuthException('That code was for a different number.');
-    _shared.verifiedPhones.add(phone);
-  }
+  Future<bool> reloadEmailVerified() async => _verified = _shared.verifiedEmails.contains(_current);
 
   @override
-  Future<String> startPasswordReset(String phone) async => _sendOtp(phone);
+  Future<void> sendPasswordReset(String email) async => _shared.sentResets.add(normalizeEmail(email));
 
   @override
-  Future<void> completePasswordReset(String verificationId, String code, String newPassword) async {
-    final phone = _checkOtp(verificationId, code);
-    final account = _accounts[phone];
-    if (account == null || !_shared.verifiedPhones.contains(phone)) throw AuthException(kUnverifiedResetMessage);
-    _accounts[phone] = (id: account.id, password: newPassword);
+  Future<void> deleteAccount(String password) async {
+    if (!await verifyPassword(password)) throw AuthException('Password is incorrect.');
+    _accounts.remove(_current);
+    _shared.verifiedEmails.remove(_current);
+    _current = null;
   }
 }
 
 class _SharedAuthState {
   final Map<String, ({String id, String password})> accounts = {};
-  final Set<String> verifiedPhones = {};
-  final Map<String, ({String phone, String code})> otps = {};
+  final Set<String> verifiedEmails = {};
+  final List<String> sentResets = [];
   int nextId = 1;
-  String? lastOtp;
 }
 
-const kUnverifiedResetMessage =
-    'No verified account for this number. OTP reset only works once you have verified your phone under Account — contact the business owner for help.';
+const kEmailTakenMessage = 'This email already has a login. Log in instead (use "Forgot password?" if needed).';

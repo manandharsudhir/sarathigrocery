@@ -34,6 +34,11 @@ enum Permission {
   /// Count cash handed over by collectors into the till, and verify
   /// wallet/bank/cheque payments. Collecting and receiving are kept apart.
   reconcileCash,
+
+  /// Price a sale/order line below its minimum selling price (clearance,
+  /// damaged stock). Owner by default; staff via a per-user toggle. Every
+  /// such line is audited and the owner notified.
+  sellBelowMinimum,
 }
 
 const Map<UserRole, Set<Permission>> defaultRolePermissions = {
@@ -62,22 +67,7 @@ const Map<UserRole, Set<Permission>> defaultRolePermissions = {
     Permission.deliverOrders,
     Permission.reconcileCash,
     Permission.createCustomers,
-  },
-  UserRole.accountant: {
-    Permission.viewSales,
-    Permission.createSales,
-    Permission.viewPurchases,
-    Permission.createPurchases,
-    Permission.viewCustomers,
-    Permission.manageCustomers,
-    Permission.viewSuppliers,
-    Permission.manageSuppliers,
-    Permission.recordPayments,
-    Permission.manageExpenses,
-    Permission.viewAccounting,
-    Permission.viewReports,
-    Permission.reconcileCash,
-    Permission.createCustomers,
+    Permission.sellBelowMinimum,
   },
   UserRole.employee: {
     Permission.viewSales,
@@ -90,5 +80,19 @@ const Map<UserRole, Set<Permission>> defaultRolePermissions = {
   UserRole.delivery: {
     Permission.deliverOrders,
   },
-  UserRole.customer: {},
+};
+
+/// What the "Can handle cash & accounts" staff toggle adds on top of the
+/// employee default, stored as a per-user `customPermissions` override.
+/// (This was the accountant role.)
+const Set<Permission> cashPermissions = {
+  Permission.viewPurchases,
+  Permission.createPurchases,
+  Permission.manageCustomers,
+  Permission.viewSuppliers,
+  Permission.manageSuppliers,
+  Permission.manageExpenses,
+  Permission.viewAccounting,
+  Permission.viewReports,
+  Permission.reconcileCash,
 };

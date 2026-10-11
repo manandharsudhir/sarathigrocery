@@ -9,15 +9,13 @@ import 'package:sarathigrocery/features/customers/presentation/controllers/payme
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_widgets.dart';
 
 /// Receipt plus whatever the viewer may do with this payment:
-/// - customer: confirm / report a problem (in the app);
-/// - owner/accountant who didn't collect it: record the result of a phone
-///   call to a customer without the app;
+/// - owner or cash staff who didn't collect it: record the result of a phone
+///   call to the customer;
 /// - owner: reverse.
 void showPaymentSheet(BuildContext context, CustomerPayment payment, PaymentsController payments, AuthController auth) {
   final user = auth.currentUser!;
-  final isCustomer = user.role == UserRole.customer;
   final open = !payment.isReversed;
-  final canCall = !isCustomer && open && user.can(Permission.reconcileCash) && user.id != payment.collectedById;
+  final canCall = open && user.can(Permission.reconcileCash) && user.id != payment.collectedById;
 
   void act(VoidCallback action, String done) => runPaymentAction(context, action, success: done);
 
@@ -35,25 +33,6 @@ void showPaymentSheet(BuildContext context, CustomerPayment payment, PaymentsCon
             const SizedBox(height: 8),
             PaymentReceipt(payment: payment, businessName: payments.businessName),
             const SizedBox(height: 12),
-            if (isCustomer && open && !payment.isCustomerConfirmed && !payment.isDisputed)
-              FilledButton.icon(
-                icon: const Icon(Icons.check),
-                label: const Text('This is correct'),
-                onPressed: () {
-                  Navigator.pop(sheetContext);
-                  act(() => payments.confirm(payment, customerUser: user), 'Thanks — payment confirmed.');
-                },
-              ),
-            if (isCustomer && open && !payment.isDisputed)
-              TextButton.icon(
-                icon: const Icon(Icons.report_outlined),
-                label: const Text('Report a problem'),
-                onPressed: () async {
-                  Navigator.pop(sheetContext);
-                  final note = await promptText(context, title: 'What is wrong?', label: 'e.g. I paid 7,000, not 5,000');
-                  if (note != null && context.mounted) act(() => payments.dispute(payment, note, customerUser: user), 'Reported — the owner has been notified.');
-                },
-              ),
             if (canCall && !payment.isCustomerConfirmed && !payment.isDisputed) ...[
               Text('Call ${payment.customer.name} (${payment.customer.phone}) and read out: ${formatNpr(payment.amount)} '
                   '${paymentMethodLabel(payment.method).toLowerCase()} on ${formatDate(payment.date)}, collected by ${payment.collectedByName}.'),
@@ -80,15 +59,15 @@ void showPaymentSheet(BuildContext context, CustomerPayment payment, PaymentsCon
             if (user.role == UserRole.owner && open)
               OutlinedButton.icon(
                 icon: const Icon(Icons.undo),
-                label: const Text('Reverse payment'),
+                label: const Text('Undo payment'),
                 onPressed: () async {
                   Navigator.pop(sheetContext);
                   final reason = await promptText(
                     context,
-                    title: payment.isSettled ? 'Reverse and refund ${formatNpr(payment.settledAmount!)}?' : 'Reverse this payment?',
+                    title: payment.isSettled ? 'Undo and refund ${formatNpr(payment.settledAmount!)}?' : 'Undo this payment?',
                     label: 'Reason (the customer will see it)',
                   );
-                  if (reason != null && context.mounted) act(() => payments.reverse(payment, reason, owner: user), 'Payment reversed.');
+                  if (reason != null && context.mounted) act(() => payments.reverse(payment, reason, owner: user), 'Payment undone.');
                 },
               ),
           ],

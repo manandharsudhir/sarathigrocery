@@ -12,7 +12,7 @@ import 'package:sarathigrocery/features/customers/domain/usecases/reverse_paymen
 import 'package:sarathigrocery/features/customers/domain/usecases/settle_payment.dart';
 import 'package:sarathigrocery/features/sales/domain/repositories/sale_repository.dart';
 
-/// Customer payments: recording, the customer's confirmation/dispute, cash
+/// Customer payments: recording, phone confirmation/dispute, cash
 /// handover to the till, owner reversal, and statements. Actions throw
 /// [PaymentException] with a displayable message.
 class PaymentsController extends ChangeNotifier {
@@ -45,7 +45,7 @@ class PaymentsController extends ChangeNotifier {
 
   List<CustomerPayment> get disputed => payments.where((p) => p.isDisputed && !p.isReversed).toList();
 
-  /// Not confirmed by code or by the customer, not disputed — worth a look.
+  /// Not signed for or confirmed by phone, not disputed — worth a look.
   List<CustomerPayment> get unconfirmed => payments.where((p) => !p.isCustomerConfirmed && !p.isDisputed && !p.isReversed).toList();
 
   List<CustomerPayment> get shortfalls => payments.where((p) => p.shortfall > 0).toList();
@@ -63,16 +63,6 @@ class PaymentsController extends ChangeNotifier {
 
   void settle(CustomerPayment payment, double counted, {required AppUser receiver}) {
     _settle(payment, counted, receiver: receiver);
-    _changed();
-  }
-
-  void confirm(CustomerPayment payment, {required AppUser customerUser}) {
-    _respond.confirm(payment, customerUser: customerUser);
-    _changed();
-  }
-
-  void dispute(CustomerPayment payment, String note, {required AppUser customerUser}) {
-    _respond.dispute(payment, note, customerUser: customerUser);
     _changed();
   }
 

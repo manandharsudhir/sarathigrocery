@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:sarathigrocery/app/widgets/dashboard_actions.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/core/widgets/metric_card.dart';
+import 'package:sarathigrocery/features/accounting/presentation/controllers/accounting_controller.dart';
+import 'package:sarathigrocery/features/accounting/presentation/pages/accounting_screen.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/credit_status.dart';
@@ -15,39 +17,45 @@ import 'package:sarathigrocery/features/dashboard/presentation/widgets/attention
 import 'package:sarathigrocery/features/dashboard/presentation/widgets/section_header.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
-import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale_status.dart';
 import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
 import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
+import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
+import 'package:sarathigrocery/features/settings/presentation/controllers/settings_controller.dart';
 
 class OwnerDashboard extends StatelessWidget {
   const OwnerDashboard({
     super.key,
     required this.sales,
     required this.cash,
+    required this.accounting,
     required this.customers,
     required this.suppliers,
     required this.ordering,
     required this.inventory,
     required this.auth,
     required this.notifications,
+    required this.settings,
     this.nav = const DashboardNav(),
   });
 
   final SalesController sales;
   final CashController cash;
+  final AccountingController accounting;
   final CustomersController customers;
   final SuppliersController suppliers;
   final OrderingController ordering;
   final InventoryController inventory;
   final AuthController auth;
   final NotificationRepository notifications;
+  final SettingsController settings;
   final DashboardNav nav;
 
   @override
   Widget build(BuildContext context) {
-    final profitLoss = sales.totalRevenue - sales.totalCostOfGoods - cash.totalExpensesAllTime;
+    final today = todayPeriod();
+    final profitLoss = accounting.statements.profitAndLoss(today.from, today.to).profit;
     final overdueCount = customers.customers.where((c) => c.creditStatus == CreditStatus.overdue).length;
 
     void openCustomers() => Navigator.push(
@@ -81,10 +89,11 @@ class OwnerDashboard extends StatelessWidget {
                 onTap: nav.openSales,
               ),
               MetricCard(
-                label: 'Profit / Loss',
+                label: "Today's Profit",
                 value: formatNpr(profitLoss),
                 color: profitLoss >= 0 ? Colors.green : Colors.red,
                 icon: Icons.insights,
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AccountingScreen(controller: accounting, auth: auth, suppliers: suppliers))),
               ),
             ],
           ),
@@ -93,28 +102,13 @@ class OwnerDashboard extends StatelessWidget {
         _NeedsAttention(
           pendingOrders: ordering.pendingCount,
           lowStock: inventory.lowStockCount,
-          nearExpiry: inventory.nearExpiryCount,
+          nearExpiry: settings.has(Feature.expiry) ? inventory.nearExpiryCount : 0,
           overdueCustomers: overdueCount,
-          uninvoiced: ordering.uninvoicedDeliveries.length,
-          onInvoice: () async {
-            final n = ordering.uninvoicedDeliveries.length;
-            final ok = await showDialog<bool>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: Text('Bill $n delivered ${n == 1 ? 'order' : 'orders'}?'),
-                content: const Text('These were delivered before deliveries created invoices, so the customers were never charged. '
-                    'Each order total will be added to its customer\'s balance and appear on their statement.'),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                  FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Create invoices')),
-                ],
-              ),
-            );
-            if (ok == true) ordering.invoiceUninvoicedDeliveries(by: auth.currentUser!);
-          },
-          overLimitOrders: ordering.orders.where((o) => o.overCreditLimit && o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled).length,
+          overLimitSales: sales.sales.where((s) => s.flaggedForApproval && s.status == SaleStatus.completed && DateTime.now().difference(s.date).inDays < 7).length,
           payments: customers.payments,
           unbalancedCustomers: customers.customers.where((c) => !customers.payments.statementFor(c).balanced).length,
+          booksBalanced: accounting.booksBalanced,
+          onOpenAccounts: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AccountingScreen(controller: accounting, auth: auth, suppliers: suppliers))),
           nav: nav,
           onOpenCustomers: openCustomers,
           onOpenPayments: (tab) => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentsScreen(payments: customers.payments, auth: auth, initialTab: tab))),
@@ -137,7 +131,7 @@ class OwnerDashboard extends StatelessWidget {
                 icon: Icons.call_received,
                 onTap: openCustomers,
               ),
-              MetricCard(label: 'Money Payable', value: formatNpr(suppliers.totalPayable), color: Colors.deepOrange, icon: Icons.call_made),
+              if (settings.has(Feature.suppliers)) MetricCard(label: 'Money Payable', value: formatNpr(suppliers.totalPayable), color: Colors.deepOrange, icon: Icons.call_made),
               MetricCard(label: "Today's Expenses", value: formatNpr(cash.todayExpenses), color: Colors.purple, icon: Icons.receipt_long),
             ],
           ),
@@ -197,21 +191,21 @@ class _NeedsAttention extends StatelessWidget {
     required this.lowStock,
     required this.nearExpiry,
     required this.overdueCustomers,
-    required this.uninvoiced,
-    required this.onInvoice,
-    required this.overLimitOrders,
+    required this.overLimitSales,
     required this.payments,
     required this.unbalancedCustomers,
+    required this.booksBalanced,
+    required this.onOpenAccounts,
     required this.nav,
     required this.onOpenCustomers,
     required this.onOpenPayments,
   });
 
-  final int uninvoiced;
-  final VoidCallback onInvoice;
-  final int overLimitOrders;
+  final int overLimitSales;
   final PaymentsController payments;
   final int unbalancedCustomers;
+  final bool booksBalanced;
+  final VoidCallback onOpenAccounts;
   final void Function(int tab) onOpenPayments;
 
   final int pendingOrders;
@@ -228,13 +222,13 @@ class _NeedsAttention extends StatelessWidget {
     final toReceiveTotal = toReceive.fold(0.0, (s, p) => s + p.amount);
     final shortfall = payments.shortfalls.fold(0.0, (s, p) => s + p.shortfall);
     final tiles = <Widget>[
-      if (uninvoiced > 0)
+      if (!booksBalanced)
         AttentionTile(
-          icon: Icons.receipt_long_outlined,
+          icon: Icons.balance,
           color: Colors.red,
-          label: '$uninvoiced delivered ${uninvoiced == 1 ? 'order was' : 'orders were'} never billed',
-          actionLabel: 'Bill now',
-          onTap: onInvoice,
+          label: 'The books don\'t match the shop\'s records',
+          actionLabel: 'Check',
+          onTap: onOpenAccounts,
         ),
       if (disputed > 0)
         AttentionTile(
@@ -256,7 +250,7 @@ class _NeedsAttention extends StatelessWidget {
         AttentionTile(
           icon: Icons.money_off,
           color: Colors.red,
-          label: '${formatNpr(shortfall)} short in cash handovers',
+          label: '${formatNpr(shortfall)} cash missing from handovers',
           actionLabel: 'Review',
           onTap: () => onOpenPayments(1),
         ),
@@ -264,17 +258,17 @@ class _NeedsAttention extends StatelessWidget {
         AttentionTile(
           icon: Icons.account_balance_wallet_outlined,
           color: Colors.orange,
-          label: '${formatNpr(toReceiveTotal)} collected, not yet in the till',
-          actionLabel: 'Receive',
+          label: '${formatNpr(toReceiveTotal)} with staff, not yet counted in',
+          actionLabel: 'Count cash in',
           onTap: () => onOpenPayments(0),
         ),
-      if (overLimitOrders > 0)
+      if (overLimitSales > 0)
         AttentionTile(
           icon: Icons.credit_card_off_outlined,
           color: Colors.deepOrange,
-          label: '$overLimitOrders ${overLimitOrders == 1 ? 'order goes' : 'orders go'} over the credit limit',
-          actionLabel: 'Decide',
-          onTap: nav.openOrders,
+          label: '$overLimitSales udharo ${overLimitSales == 1 ? 'sale' : 'sales'} this week went over the credit limit',
+          actionLabel: 'Review',
+          onTap: nav.openSales,
         ),
       if (pendingOrders > 0)
         AttentionTile(

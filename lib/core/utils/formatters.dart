@@ -1,3 +1,9 @@
+/// Currency label for [formatNpr], set from the open shop's settings.
+// ponytail: process-global, fine while one shop is open at a time; pass the
+// settings through if two shops ever render side by side.
+String currencyLabel = 'NPR';
+
+/// Amount with Nepali digit grouping (`NPR 2,50,000`), labelled [currencyLabel].
 String formatNpr(double amount) {
   final isNegative = amount < 0;
   final rounded = amount.abs().round();
@@ -16,7 +22,7 @@ String formatNpr(double amount) {
     if (rest.isNotEmpty) parts.insert(0, rest);
     grouped = '${parts.join(',')},$last3';
   }
-  return '${isNegative ? '-' : ''}NPR $grouped';
+  return '${isNegative ? '-' : ''}$currencyLabel $grouped';
 }
 
 String formatDate(DateTime date) {
@@ -32,4 +38,10 @@ String formatDaysAgo(DateTime date) {
   if (days <= 0) return 'Today';
   if (days == 1) return '1 day ago';
   return '$days days ago';
+}
+
+/// A quantity with at most 3 decimals and no trailing zeros: 2, 2.5, 0.75.
+String formatQty(double qty) {
+  final text = qty.toStringAsFixed(3);
+  return text.contains('.') ? text.replaceFirst(RegExp(r'\.?0+$'), '') : text;
 }
