@@ -94,6 +94,14 @@ class CashController extends ChangeNotifier {
     _done();
   }
 
+  void drawingReturned(String person, double amount, String account, String note, {required String userName}) {
+    _check(amount);
+    _books.drawingReturned(person, amount, account, note, by: userName);
+    _in(account, amount, 'Drawings returned by $person${note.isEmpty ? '' : ' – $note'}');
+    _audit.record(userName, 'Drawings returned', 'Money', newValue: '${formatNpr(amount)} by $person');
+    _done();
+  }
+
   void loanReceived(String lender, double amount, String account, {required String userName}) {
     _check(amount);
     _books.loanReceived(lender, amount, account, by: userName);

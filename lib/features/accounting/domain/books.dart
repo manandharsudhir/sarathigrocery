@@ -212,6 +212,18 @@ class Books {
   void drawing(String person, double amount, String account, String note, {String by = ''}) =>
       post('drawing', 'Taken out by $person${note.isEmpty ? '' : ' – $note'}', {Acc.drawings(person): amount, account: -amount}, by: by);
 
+  /// An owner paying back money taken as drawings; capped at what they
+  /// have drawn (more than that is new capital).
+  void drawingReturned(String person, double amount, String account, String note, {String by = ''}) {
+    final drawn = _round(entries.fold(0.0, (s, e) => s + (e.lines[Acc.drawings(person)] ?? 0)));
+    if (amount > drawn) {
+      throw AccountingException(drawn <= 0
+          ? '$person has no drawings to return. Record it as Capital put in.'
+          : '$person has drawn ${formatNpr(drawn)}. Record the rest as Capital put in.');
+    }
+    post('drawingReturn', 'Returned by $person${note.isEmpty ? '' : ' – $note'}', {account: amount, Acc.drawings(person): -amount}, by: by);
+  }
+
   void loanReceived(String lender, double amount, String account, {String by = ''}) =>
       post('loan', 'Loan from $lender', {account: amount, Acc.loan(lender): -amount}, by: by);
 

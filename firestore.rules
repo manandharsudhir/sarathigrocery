@@ -352,7 +352,7 @@ service cloud.firestore {
         allow create: if request.resource.data.lines is list
           && request.resource.data.date is int
           && request.resource.data.date > closedThrough()
-          && ((staff() && (isOwner() || !(request.resource.data.kind in ['capital', 'drawing', 'loan', 'loanRepaid', 'dividend', 'manual', 'opening', 'close'])))
+          && ((staff() && (isOwner() || !(request.resource.data.kind in ['capital', 'drawing', 'drawingReturn', 'loan', 'loanRepaid', 'dividend', 'manual', 'opening', 'close'])))
             || (deliverer() && request.resource.data.kind in ['sale', 'payment', 'settlement']));
         allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
       }

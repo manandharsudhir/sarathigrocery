@@ -80,6 +80,8 @@ class CashScreen extends StatelessWidget {
                   onSave: (v) => c.capitalIn(v.person, v.amount, v.account, userName: user))),
               item(Icons.person_remove_outlined, 'Drawings (taken for personal use)', () => showMoneySheet(context, c, title: 'Drawings', person: 'Who took it', note: true,
                   onSave: (v) => c.drawing(v.person, v.amount, v.account, v.note, userName: user))),
+              item(Icons.person_add_alt_outlined, 'Drawings returned (paid back)', () => showMoneySheet(context, c, title: 'Drawings returned', person: 'Who paid it back', note: true,
+                  onSave: (v) => c.drawingReturned(v.person, v.amount, v.account, v.note, userName: user))),
               item(Icons.account_balance_outlined, 'Loan received', () => showMoneySheet(context, c, title: 'Loan received', person: 'Lender (bank or person)', anyPerson: true,
                   onSave: (v) => c.loanReceived(v.person, v.amount, v.account, userName: user))),
               item(Icons.payments_outlined, 'Loan repaid', () => showMoneySheet(context, c, title: 'Loan repaid', person: 'Lender', anyPerson: true,

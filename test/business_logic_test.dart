@@ -409,6 +409,8 @@ void main() {
       owner.cash.addExpense('Rent', 15000, 'October', createdByName: 'Owner', account: 'bank');
       owner.cash.otherPayment(8000, 'cash', 'shelves', userName: 'Owner');
       owner.cash.drawing('Owner', 2000, 'cash', 'lunch', userName: 'Owner');
+      expect(() => owner.cash.drawingReturned('Owner', 2500, 'cash', '', userName: 'Owner'), throwsA(isA<AccountingException>()));
+      owner.cash.drawingReturned('Owner', 500, 'bank', 'paid back', userName: 'Owner');
       owner.cash.loanReceived('NIC Asia', 100000, 'bank', userName: 'Owner');
       owner.cash.loanRepaid('NIC Asia', 10000, 'bank', userName: 'Owner');
       owner.inventory.adjustStock(rice, AdjustmentType.damaged, 1, 'torn', userName: 'Owner');
@@ -428,6 +430,7 @@ void main() {
       final pl = fresh.accounting.statements.profitAndLoss(DateTime.now().subtract(const Duration(days: 1)), DateTime.now());
       expect(pl.costs[Acc.expense('Rent')], 15000);
       expect(fresh.accounting.statements.balanceSheet(DateTime.now()).liabilities[Acc.loan('NIC Asia')], 90000);
+      expect(fresh.accounting.statements.balanceSheet(DateTime.now()).equity[Acc.drawings('Owner')], -1500);
     });
 
     test('door collection with a short handover and a delivery-invoiced order stay balanced', () async {

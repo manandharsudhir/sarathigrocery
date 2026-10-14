@@ -6,6 +6,7 @@ import 'package:sarathigrocery/features/customers/domain/entities/customer.dart'
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/pages/customer_form_sheet.dart';
+import 'package:sarathigrocery/features/customers/presentation/widgets/customer_picker.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product_pack.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
@@ -86,13 +87,10 @@ class _StaffNewOrderScreenState extends State<StaffNewOrderScreen> {
             children: [
               Row(children: [
                 Expanded(
-                  child: DropdownMenu<Customer>(
-                    initialSelection: customer,
-                    label: const Text('Customer'),
-                    expandedInsets: EdgeInsets.zero,
-                    enableFilter: true,
-                    requestFocusOnTap: true,
-                    dropdownMenuEntries: [for (final c in widget.customers.customers) DropdownMenuEntry(value: c, label: c.name)],
+                  child: CustomerPicker(
+                    customers: widget.customers.customers,
+                    selected: customer,
+                    label: 'Customer',
                     onSelected: (c) => setState(() {
                       _customer = c;
                       if (_address.text.isEmpty && c != null) _address.text = c.location;

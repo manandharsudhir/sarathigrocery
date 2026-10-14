@@ -4,6 +4,7 @@ import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
+import 'package:sarathigrocery/features/customers/presentation/widgets/customer_picker.dart';
 import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product_pack.dart';
@@ -54,16 +55,11 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          DropdownMenu<Customer?>(
-            initialSelection: _customer,
-            label: const Text('Customer (optional)'),
-            expandedInsets: EdgeInsets.zero,
-            enableFilter: true,
-            requestFocusOnTap: true,
-            dropdownMenuEntries: [
-              const DropdownMenuEntry(value: null, label: 'Walk-in / Cash customer'),
-              for (final c in widget.customers.customers) DropdownMenuEntry(value: c, label: c.name),
-            ],
+          CustomerPicker(
+            customers: widget.customers.customers,
+            selected: _customer,
+            label: 'Customer (optional)',
+            walkInLabel: 'Walk-in / Cash customer',
             onSelected: (c) => setState(() {
               _customer = c;
               if (c == null) _isCredit = false;

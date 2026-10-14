@@ -164,6 +164,7 @@ void main() {
     owner.accounting.saveSetup(owners: const [OwnerShare('Owner', 70), OwnerShare('Partner', 30)], moneyAccounts: const ['bank:NIC Asia'], by: o);
     owner.cash.capitalIn('Partner', 50000, 'bank:NIC Asia', userName: o.name);
     owner.cash.drawing('Owner', 1000, 'cash', 'personal', userName: o.name);
+    owner.cash.drawingReturned('Owner', 400, 'cash', 'paid back', userName: o.name);
     owner.cash.loanReceived('Uncle', 20000, 'cash', userName: o.name);
     owner.cash.loanRepaid('Uncle', 5000, 'cash', userName: o.name);
     owner.cash.dividend(2000, 'bank:NIC Asia', userName: o.name);

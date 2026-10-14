@@ -584,7 +584,7 @@ describe('journal and accounting settings', () => {
   test('staff book trading; owners\' money, adjustments and the year close are the owner\'s', async () => {
     await assertSucceeds(setDoc(doc(db(EMPLOYEE), p('journal/J1')), entry('sale')));
     await assertSucceeds(setDoc(doc(db(CASHIER), p('journal/J2')), entry('expense')));
-    for (const kind of ['capital', 'drawing', 'loan', 'loanRepaid', 'dividend', 'manual', 'opening', 'close']) {
+    for (const kind of ['capital', 'drawing', 'drawingReturn', 'loan', 'loanRepaid', 'dividend', 'manual', 'opening', 'close']) {
       await assertFails(setDoc(doc(db(CASHIER), p(`journal/K-${kind}`)), entry(kind)), kind);
       await assertSucceeds(setDoc(doc(db(OWNER), p(`journal/O-${kind}`)), entry(kind)), kind);
     }
