@@ -127,4 +127,4 @@ String accountName(String id) {
 List<String> moneyAccountIds(List<String> named) => [Acc.cash, Acc.bank, Acc.wallet, ...named];
 
 /// Expense categories every shop starts with (Settings adds more).
-const kExpenseCategories = ['Rent', 'Salary', 'Transport', 'Utilities', 'Packaging', 'Interest', 'Tea/Misc'];
+const kExpenseCategories = ['Rent', 'Salary', 'Labour', 'Transport', 'Utilities', 'Packaging', 'Interest', 'Tea/Misc'];

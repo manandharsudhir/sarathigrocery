@@ -1,6 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sarathigrocery/app/injection.dart';
 import 'package:sarathigrocery/app/accountant_export.dart';
+import 'package:sarathigrocery/app/daily_summary_export.dart';
+import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
+import 'package:sarathigrocery/features/cash/domain/entities/cash_ledger_entry.dart';
+import 'package:sarathigrocery/features/reports/domain/daily_summary.dart';
 import 'package:sarathigrocery/app/shop_export.dart';
 import 'package:sarathigrocery/features/accounting/presentation/pages/accounting_screen.dart';
 import 'package:sarathigrocery/features/accounting/domain/books.dart';
@@ -431,6 +435,55 @@ void main() {
       expect(pl.costs[Acc.expense('Rent')], 15000);
       expect(fresh.accounting.statements.balanceSheet(DateTime.now()).liabilities[Acc.loan('NIC Asia')], 90000);
       expect(fresh.accounting.statements.balanceSheet(DateTime.now()).equity[Acc.drawings('Owner')], -1500);
+    });
+
+    test('daily summary: closing balances per day match the books, flows exclude cancelled/reversed, CSV + PDF export', () async {
+      final s = await TestBusiness.create();
+      final owner = await s.device(UserRole.owner);
+      final user = owner.auth.currentUser!;
+      owner.accounting.saveSetup(owners: const [OwnerShare('Owner', 100)], by: user);
+      owner.cash.capitalIn('Owner', 100000, 'cash', userName: 'Owner');
+      owner.cash.transfer('cash', 'bank', 30000, 'to bank', userName: 'Owner');
+      final rice = owner.inventory.products.first;
+      final customer = owner.customers.customers.first;
+      owner.purchasing.createPurchase(supplier: owner.suppliers.suppliers.first, items: [PurchaseItem(product: rice, qty: 10, unitCost: 2900)], paidAmount: 20000, userName: 'Owner', account: 'bank');
+      final cashSale = owner.sales.recordSale(items: [SaleItem(product: rice, qty: 2, unitPrice: rice.unitPrice)], isCredit: false, userName: 'Owner');
+      final credit = owner.sales.recordSale(items: [SaleItem(product: rice, qty: 1, unitPrice: rice.unitPrice)], isCredit: true, customer: customer, userName: 'Owner');
+      owner.sales.cancelSale(owner.sales.recordSale(items: [SaleItem(product: rice, qty: 1, unitPrice: rice.unitPrice)], isCredit: false, userName: 'Owner'), 'mistake', userName: 'Owner');
+      owner.cash.addExpense('Rent', 5000, '', createdByName: 'Owner', account: 'cash');
+      owner.payments.record(customer, 700, method: PaymentMethod.cash, collector: user);
+      owner.payments.reverse(owner.payments.record(customer, 300, method: PaymentMethod.cash, collector: user), 'wrong', owner: user);
+      await pumpEventQueue();
+
+      final now = DateTime.now();
+      final summary = dailySummaryFor(owner, now.subtract(const Duration(days: 2)), now);
+      expect(summary.days.length, 3);
+      final yesterday = summary.days[1], today = summary.closing;
+      expect([summary.opening.cash, yesterday.cash, yesterday.bank, yesterday.receivables, yesterday.sales], [0, 0, 0, 0, 0]);
+      expect(today.cash, owner.cash.balanceOf('cash'));
+      expect(today.bank, owner.cash.balanceOf('bank'));
+      expect(today.receivables, owner.customers.totalOutstanding);
+      expect(today.payables, owner.suppliers.totalPayable);
+      expect(today.sales, cashSale.total + credit.total);
+      expect([today.cashSales, today.creditSales], [cashSale.total, credit.total]);
+      expect([today.collections, today.expenses, today.purchases], [700, 5000, 29000]);
+      expect(today.profit, closeTo(owner.accounting.statements.profitAndLoss(todayPeriod().from, todayPeriod().to).profit, 0.01));
+      expect(summary.total((d) => d.sales), today.sales);
+
+      // A cash book line dated in the past opens that day and carries over.
+      final past = dailySummary(
+        from: now.subtract(const Duration(days: 2)),
+        to: now,
+        accounts: owner.cash.moneyAccounts,
+        ledger: [CashLedgerEntry(id: 'old', date: now.subtract(const Duration(days: 1)), type: CashEntryType.moneyIn, amount: 500, note: ''), ...owner.cash.ledger],
+        sales: const [], payments: const [], expenses: const [], purchases: const [], journal: const [],
+      );
+      expect(past.days.map((d) => d.cash), [0, 500, 500 + owner.cash.balanceOf('cash')]);
+
+      final csv = dailySummaryCsv(owner, summary).split('\r\n');
+      expect(csv.length, 4);
+      expect(csv.first, startsWith('Date,BS date,Cash'));
+      expect((await dailySummaryPdf(owner, summary)).isNotEmpty, isTrue);
     });
 
     test('door collection with a short handover and a delivery-invoiced order stay balanced', () async {

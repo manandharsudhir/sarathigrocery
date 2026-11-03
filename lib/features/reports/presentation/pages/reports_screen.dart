@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:sarathigrocery/core/utils/bs_date.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
+import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
+import 'package:sarathigrocery/features/reports/domain/daily_summary.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/adjustment_type.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
@@ -25,6 +28,8 @@ class ReportsScreen extends StatelessWidget {
     required this.suppliers,
     required this.settings,
     required this.accounts,
+    required this.daily,
+    required this.onExportDaily,
   });
 
   final SalesController sales;
@@ -38,10 +43,15 @@ class ReportsScreen extends StatelessWidget {
   /// Profit & Loss, Balance Sheet and the rest live in Accounts.
   final WidgetBuilder accounts;
 
+  /// Daily figures for a range, and sharing them as CSV + PDF.
+  final DailySummary Function(DateTime from, DateTime to) daily;
+  final Future<void> Function(DateTime from, DateTime to) onExportDaily;
+
   @override
   Widget build(BuildContext context) {
     final hasSuppliers = settings.has(Feature.suppliers);
     final reports = <(String, IconData, WidgetBuilder)>[
+      ('Daily Summary', Icons.calendar_view_day_outlined, (_) => _DailySummaryScreen(daily: daily, onExport: onExportDaily, accounts: cash.moneyAccounts, hasSuppliers: hasSuppliers)),
       ('Sales Report', Icons.point_of_sale, (_) => _SalesReportScreen(sales: sales)),
       ('Sales by Product', Icons.inventory_2_outlined, (_) => _SalesByProductScreen(sales: sales)),
       ('Sales by Customer', Icons.people_outline, (_) => _SalesByCustomerScreen(sales: sales)),
@@ -76,18 +86,22 @@ class ReportsScreen extends StatelessWidget {
   }
 }
 
-/// Simple start/end date range row. Defaults to the last 30 days.
+/// Simple start/end date range row. Defaults to the last [days] days (a
+/// month); a
+/// longer pick than [maxDays] keeps its end and is cut to [maxDays].
 class _DateRangeBar extends StatefulWidget {
-  const _DateRangeBar({required this.onChanged});
+  const _DateRangeBar({required this.onChanged, this.days = 31, this.maxDays});
 
   final ValueChanged<DateTimeRange> onChanged;
+  final int days;
+  final int? maxDays;
 
   @override
   State<_DateRangeBar> createState() => _DateRangeBarState();
 }
 
 class _DateRangeBarState extends State<_DateRangeBar> {
-  late DateTimeRange _range = DateTimeRange(start: DateTime.now().subtract(const Duration(days: 30)), end: DateTime.now());
+  late DateTimeRange _range = DateTimeRange(start: DateTime.now().subtract(Duration(days: widget.days - 1)), end: DateTime.now());
 
   @override
   void initState() {
@@ -98,7 +112,10 @@ class _DateRangeBarState extends State<_DateRangeBar> {
   Future<void> _pick() async {
     final picked = await showDateRangePicker(context: context, firstDate: DateTime(2020), lastDate: DateTime.now(), initialDateRange: _range);
     if (picked != null) {
-      setState(() => _range = picked);
+      final max = widget.maxDays;
+      final cut = max != null && picked.duration.inDays >= max;
+      setState(() => _range = cut ? DateTimeRange(start: picked.end.subtract(Duration(days: max - 1)), end: picked.end) : picked);
+      if (cut && mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Showing the last $max days of that range.')));
       widget.onChanged(_range);
     }
   }
@@ -421,6 +438,108 @@ class _EmployeePerformanceScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: byEmployee.entries.map((e) => ListTile(title: Text(e.key), subtitle: Text('${e.value.$1} sales'), trailing: Text(formatNpr(e.value.$2)))).toList(),
+      ),
+    );
+  }
+}
+
+/// Cash, bank and wallet at the end of each day, plus what moved that day.
+/// Profit needs costs, which only owners and cash staff see; Reports is
+/// theirs alone.
+class _DailySummaryScreen extends StatefulWidget {
+  const _DailySummaryScreen({required this.daily, required this.onExport, required this.accounts, required this.hasSuppliers});
+  final DailySummary Function(DateTime from, DateTime to) daily;
+  final Future<void> Function(DateTime from, DateTime to) onExport;
+  final List<String> accounts;
+  final bool hasSuppliers;
+  @override
+  State<_DailySummaryScreen> createState() => _DailySummaryScreenState();
+}
+
+class _DailySummaryScreenState extends State<_DailySummaryScreen> {
+  DateTimeRange? _range;
+
+  Widget _row(String label, String value, {bool bold = false}) => ListTile(
+        dense: true,
+        title: Text(label),
+        trailing: Text(value, style: bold ? const TextStyle(fontWeight: FontWeight.w600) : null),
+      );
+
+  bool get _hasWallet => widget.accounts.any((a) => a.split(':').first == Acc.wallet);
+
+  /// Each named bank/wallet on its own line when there is more than one.
+  List<Widget> _accountRows(DaySummary d, String family) {
+    final ids = widget.accounts.where((a) => a.split(':').first == family).toList();
+    return ids.length < 2 ? const [] : [for (final a in ids) _row('   ${accountName(a)}', formatNpr(d.balances[a] ?? 0))];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final range = _range;
+    final summary = range == null ? null : widget.daily(range.start, range.end);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Daily Summary'),
+        actions: [
+          IconButton(
+            tooltip: 'Export CSV + PDF',
+            icon: const Icon(Icons.ios_share),
+            onPressed: range == null ? null : () => widget.onExport(range.start, range.end),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _DateRangeBar(days: 7, maxDays: 366, onChanged: (r) => setState(() => _range = r)),
+          if (summary != null)
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  Card(
+                    child: Column(children: [
+                      _row('Cash in hand', '${formatNpr(summary.opening.cash)} → ${formatNpr(summary.closing.cash)}', bold: true),
+                      _row('Bank', '${formatNpr(summary.opening.bank)} → ${formatNpr(summary.closing.bank)}'),
+                      if (_hasWallet) _row('Wallet', '${formatNpr(summary.opening.wallet)} → ${formatNpr(summary.closing.wallet)}'),
+                      _row('Sales', formatNpr(summary.total((d) => d.sales)), bold: true),
+                      _row('Collections', formatNpr(summary.total((d) => d.collections))),
+                      _row('Expenses', formatNpr(summary.total((d) => d.expenses))),
+                      if (widget.hasSuppliers) ...[
+                        _row('Purchases', formatNpr(summary.total((d) => d.purchases))),
+                        _row('Supplier payments', formatNpr(summary.total((d) => d.supplierPayments))),
+                      ],
+                      _row('Profit', formatNpr(summary.total((d) => d.profit)), bold: true),
+                    ]),
+                  ),
+                  for (final d in summary.days.reversed)
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: Text('${formatDate(d.day)} · ${formatBs(d.day)}'),
+                      subtitle: Text('Cash ${formatNpr(d.cash)} · Bank ${formatNpr(d.bank)} · Sales ${formatNpr(d.sales)}'),
+                      children: [
+                        _row('Cash in hand', formatNpr(d.cash), bold: true),
+                        _row('Bank', formatNpr(d.bank)),
+                        ..._accountRows(d, Acc.bank),
+                        if (_hasWallet) ...[_row('Wallet', formatNpr(d.wallet)), ..._accountRows(d, Acc.wallet)],
+                        _row('Sales', formatNpr(d.sales), bold: true),
+                        _row('   Cash sales', formatNpr(d.cashSales)),
+                        _row('   Udharo sales', formatNpr(d.creditSales)),
+                        _row('Orders delivered', '${d.ordersDelivered}'),
+                        _row('Collections', formatNpr(d.collections)),
+                        _row('Expenses', formatNpr(d.expenses)),
+                        if (widget.hasSuppliers) ...[
+                          _row('Purchases', formatNpr(d.purchases)),
+                          _row('Supplier payments', formatNpr(d.supplierPayments)),
+                        ],
+                        _row('Customers owe', formatNpr(d.receivables)),
+                        if (widget.hasSuppliers) _row('Owed to suppliers', formatNpr(d.payables)),
+                        _row('Profit', formatNpr(d.profit), bold: true),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

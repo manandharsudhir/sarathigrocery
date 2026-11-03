@@ -7,6 +7,7 @@ import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart
 import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
+import 'package:sarathigrocery/features/purchasing/presentation/pages/purchase_detail_screen.dart';
 import 'package:sarathigrocery/features/suppliers/domain/entities/supplier.dart';
 import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
 
@@ -49,6 +50,7 @@ class SupplierDetailScreen extends StatelessWidget {
               ...purchases.map((p) => ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text('Purchase ${p.id}'),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseDetailScreen(purchase: p))),
                     subtitle: Text(formatDate(p.date)),
                     trailing: Text(formatNpr(p.total)),
                   )),

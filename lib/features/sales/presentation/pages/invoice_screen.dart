@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:sarathigrocery/core/utils/bs_date.dart';
+import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
 import 'package:sarathigrocery/features/customers/presentation/pdf/payment_documents.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/credit_note.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale.dart';
@@ -24,7 +26,7 @@ class InvoiceScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Share PDF',
             icon: const Icon(Icons.share),
-            onPressed: () async => sharePdf(await billPdf(sale, seller, creditNote: creditNote), '${(creditNote?.number ?? sale.invoiceNumber ?? sale.id).replaceAll('/', '-')}.pdf'),
+            onPressed: () async => sharePdf(await billPdf(sale, seller, creditNote: creditNote), billFileName(sale, creditNote)),
           ),
         ],
       ),
@@ -58,4 +60,21 @@ class InvoiceScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// "Ram Stores 2082-07-17 Cash 2082-83-15.pdf": customer, BS date, how it was
+/// paid, then the bill number so same-day bills don't clash.
+String billFileName(Sale sale, CreditNote? creditNote) {
+  final date = creditNote?.date ?? sale.date;
+  String day;
+  try {
+    day = BsDate.fromAd(date).toString();
+  } on RangeError {
+    day = date.toIso8601String().substring(0, 10); // outside the BS table
+  }
+  final payment = creditNote != null ? 'Credit note' : sale.isCredit ? 'Credit' : accountName(sale.account);
+  final number = creditNote?.number ?? sale.invoiceNumber ?? sale.id;
+  final customer = sale.customer?.name.trim() ?? '';
+  final name = [customer.isEmpty ? 'Walk-in' : customer, day, payment, number].where((s) => s.isNotEmpty).join(' ');
+  return '${name.replaceAll(RegExp(r'[/\\:*?"<>|]'), '-')}.pdf';
 }

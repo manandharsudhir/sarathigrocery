@@ -35,7 +35,7 @@ class CashController extends ChangeNotifier {
   /// Cash, Bank, Wallet, then the shop's named banks/wallets.
   List<String> get moneyAccounts => moneyAccountIds(_settings().moneyAccounts);
 
-  List<String> get expenseCategories => [...kExpenseCategories, ..._settings().expenseCategories];
+  List<String> get expenseCategories => {...kExpenseCategories, ..._settings().expenseCategories}.toList();
 
   List<String> get ownerNames => [for (final o in _settings().owners) o.name];
 

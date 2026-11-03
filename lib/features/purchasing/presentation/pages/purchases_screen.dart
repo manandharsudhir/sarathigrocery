@@ -4,17 +4,21 @@ import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/core/widgets/empty_state.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
+import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/pages/new_purchase_screen.dart';
+import 'package:sarathigrocery/features/purchasing/presentation/pages/purchase_detail_screen.dart';
+import 'package:sarathigrocery/features/suppliers/presentation/pages/supplier_detail_screen.dart';
 import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
 
 class PurchasesScreen extends StatelessWidget {
-  const PurchasesScreen({super.key, required this.purchasing, required this.suppliers, required this.inventory, required this.auth});
+  const PurchasesScreen({super.key, required this.purchasing, required this.suppliers, required this.inventory, required this.cash, required this.auth});
 
   final PurchasingController purchasing;
   final SuppliersController suppliers;
   final InventoryController inventory;
+  final CashController cash;
   final AuthController auth;
 
   @override
@@ -37,6 +41,10 @@ class PurchasesScreen extends StatelessWidget {
                     final p = purchases[index];
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseDetailScreen(
+                            purchase: p,
+                            openSupplier: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SupplierDetailScreen(supplier: p.supplier, controller: suppliers, purchasing: purchasing, cash: cash, auth: auth))),
+                          ))),
                       title: Text(p.supplier.businessName),
                       subtitle: Text('${p.id} · ${formatDate(p.date)} · ${p.items.length} items'),
                       trailing: Column(
@@ -44,7 +52,7 @@ class PurchasesScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(formatNpr(p.total), style: const TextStyle(fontWeight: FontWeight.w600)),
-                          if (p.remainingAmount > 0) Text('Due ${formatNpr(p.remainingAmount)}', style: const TextStyle(color: Colors.red, fontSize: 12)),
+                          if (p.remainingAmount > 0) Text('Unpaid at purchase ${formatNpr(p.remainingAmount)}', style: const TextStyle(color: Colors.red, fontSize: 12)),
                         ],
                       ),
                     );

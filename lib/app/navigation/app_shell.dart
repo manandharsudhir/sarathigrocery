@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/app/accountant_export.dart';
+import 'package:sarathigrocery/app/daily_summary_export.dart';
 import 'package:sarathigrocery/app/injection.dart';
 import 'package:sarathigrocery/app/shop_export.dart';
 import 'package:sarathigrocery/core/services/app_signal.dart';
@@ -139,7 +140,7 @@ List<MoreMenuItem> _ownerMoreItems(AppScope scope) {
     _accounts(scope),
     if (scope.settings.current.vatRegistered) _vatBooks(scope),
     if (settings.has(Feature.suppliers)) ...[
-      MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, auth: scope.auth)),
+      MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, cash: scope.cash, auth: scope.auth)),
       MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, auth: scope.auth)),
     ],
     if (settings.has(Feature.categories)) MoreMenuItem(icon: Icons.category_outlined, label: 'Categories', builder: (_) => CategoriesScreen(controller: scope.inventory)),
@@ -159,7 +160,7 @@ List<MoreMenuItem> _cashStaffMoreItems(AppScope scope) => [
       if (scope.settings.current.vatRegistered) _vatBooks(scope),
       MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth)),
       if (scope.settings.has(Feature.suppliers)) ...[
-        MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, auth: scope.auth)),
+        MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, cash: scope.cash, auth: scope.auth)),
         MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, auth: scope.auth)),
       ],
       _reports(scope),
@@ -180,7 +181,7 @@ MoreMenuItem _vatBooks(AppScope scope) => MoreMenuItem(
 MoreMenuItem _reports(AppScope scope) => MoreMenuItem(
       icon: Icons.bar_chart_outlined,
       label: 'Reports',
-      builder: (_) => ReportsScreen(sales: scope.sales, purchasing: scope.purchasing, cash: scope.cash, inventory: scope.inventory, customers: scope.customers, suppliers: scope.suppliers, settings: scope.settings, accounts: (_) => AccountingScreen(controller: scope.accounting, auth: scope.auth, suppliers: scope.suppliers, onExport: (p) => shareAccountantExport(scope, p))),
+      builder: (_) => ReportsScreen(sales: scope.sales, purchasing: scope.purchasing, cash: scope.cash, inventory: scope.inventory, customers: scope.customers, suppliers: scope.suppliers, settings: scope.settings, accounts: (_) => AccountingScreen(controller: scope.accounting, auth: scope.auth, suppliers: scope.suppliers, onExport: (p) => shareAccountantExport(scope, p)), daily: (from, to) => dailySummaryFor(scope, from, to), onExportDaily: (from, to) => shareDailySummary(scope, from, to)),
     );
 
 class AppShell extends StatefulWidget {
