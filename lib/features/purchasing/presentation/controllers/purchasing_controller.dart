@@ -84,8 +84,8 @@ class PurchasingController extends ChangeNotifier {
     return purchase;
   }
 
-  void recordPurchaseReturn(Supplier supplier, Product product, double qty, String reason, {required String userName}) {
-    _recordReturn(supplier, product, qty, reason, userName: userName);
+  void recordPurchaseReturn(Supplier supplier, Product product, double qty, String reason, {required String userName, double? unitCost}) {
+    _recordReturn(supplier, product, qty, reason, userName: userName, unitCost: unitCost);
     notifyListeners();
     AppSignal.instance.ping();
   }

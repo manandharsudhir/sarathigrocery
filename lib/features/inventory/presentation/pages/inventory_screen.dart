@@ -12,9 +12,12 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
 import 'package:sarathigrocery/features/settings/presentation/controllers/settings_controller.dart';
 
 class InventoryScreen extends StatefulWidget {
-  const InventoryScreen({super.key, required this.controller, required this.auth, required this.settings});
+  const InventoryScreen({super.key, required this.controller, required this.auth, required this.settings, this.returnToSupplier});
 
   final InventoryController controller;
+
+  /// Set (by AppShell) when this user may return goods to suppliers.
+  final void Function(BuildContext context, Product product)? returnToSupplier;
   final AuthController auth;
   final SettingsController settings;
 
@@ -53,6 +56,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               itemCount: products.length,
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, index) => _ProductTile(
+                returnToSupplier: widget.returnToSupplier,
                 product: products[index],
                 controller: controller,
                 auth: widget.auth,
@@ -75,8 +79,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
 }
 
 class _ProductTile extends StatelessWidget {
-  const _ProductTile({required this.product, required this.controller, required this.auth, required this.settings, required this.canManage});
+  const _ProductTile({required this.product, required this.controller, required this.auth, required this.settings, required this.canManage, this.returnToSupplier});
 
+  final void Function(BuildContext context, Product product)? returnToSupplier;
   final Product product;
   final InventoryController controller;
   final AuthController auth;
@@ -94,7 +99,7 @@ class _ProductTile extends StatelessWidget {
         side: BorderSide(color: Theme.of(context).dividerColor),
       ),
       child: ListTile(
-        onTap: canManage
+        onTap: canManage || returnToSupplier != null
             ? () => _showActionsSheet(context, canAdjust)
             : (canAdjust ? () => _showAdjustSheet(context) : null),
         title: Text(product.name, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -127,7 +132,8 @@ class _ProductTile extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
+            if (canManage)
+              ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('Edit Product'),
               onTap: () {
@@ -144,6 +150,15 @@ class _ProductTile extends StatelessWidget {
                   _showAdjustSheet(context);
                 },
               ),
+            if (returnToSupplier != null)
+              ListTile(
+                leading: const Icon(Icons.assignment_return_outlined),
+                title: const Text('Return to supplier'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  returnToSupplier!(context, product);
+                },
+              ),
           ],
         ),
       ),
@@ -154,6 +169,7 @@ class _ProductTile extends StatelessWidget {
     final qtyController = TextEditingController();
     final noteController = TextEditingController();
     var type = AdjustmentType.damaged;
+    var unit = product.primary;
 
     showModalBottomSheet(
       context: context,
@@ -171,17 +187,43 @@ class _ProductTile extends StatelessWidget {
                 segments: const [
                   ButtonSegment(value: AdjustmentType.damaged, label: Text('Damaged')),
                   ButtonSegment(value: AdjustmentType.expired, label: Text('Expired')),
-                  ButtonSegment(value: AdjustmentType.returned, label: Text('Returned')),
+                  ButtonSegment(value: AdjustmentType.returned, label: Text('Customer return')),
                 ],
                 selected: {type},
                 onSelectionChanged: (s) => setSheetState(() => type = s.first),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: qtyController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(labelText: 'Quantity (${product.unitLabel})'),
-              ),
+              Row(children: [
+                Expanded(
+                  flex: 2,
+                  child: TextField(
+                    controller: qtyController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setSheetState(() {}),
+                    decoration: InputDecoration(
+                      labelText: product.packs.isEmpty ? 'Quantity (${product.unitLabel})' : 'Quantity',
+                      helperText: unit.size == 1 || (double.tryParse(qtyController.text) ?? 0) <= 0
+                          ? null
+                          : '= ${formatQty((double.tryParse(qtyController.text) ?? 0) * unit.size)} ${product.unitLabel}',
+                    ),
+                  ),
+                ),
+                if (product.packs.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 3,
+                    child: DropdownButtonFormField<String>(
+                      initialValue: unit.label,
+                      decoration: const InputDecoration(labelText: 'Unit'),
+                      items: [
+                        for (final u in product.sellUnits)
+                          DropdownMenuItem(value: u.label, child: Text(u.size == 1 ? u.label : '${u.label} (${formatQty(u.size)} ${product.unitLabel})')),
+                      ],
+                      onChanged: (label) => setSheetState(() => unit = product.sellUnit(label ?? unit.label)),
+                    ),
+                  ),
+                ],
+              ]),
               const SizedBox(height: 8),
               TextField(
                 controller: noteController,
@@ -194,7 +236,7 @@ class _ProductTile extends StatelessWidget {
                   onPressed: () {
                     final qty = double.tryParse(qtyController.text) ?? 0;
                     if (qty <= 0 || noteController.text.trim().isEmpty) return;
-                    controller.adjustStock(product, type, qty, noteController.text, userName: auth.currentUser?.name ?? '');
+                    controller.adjustStock(product, type, qty * unit.size, noteController.text, userName: auth.currentUser?.name ?? '');
                     Navigator.pop(context);
                   },
                   child: const Text('Log Adjustment'),

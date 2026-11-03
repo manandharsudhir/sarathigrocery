@@ -154,6 +154,8 @@ void main() {
     cashier.purchasing.createPurchase(supplier: supplier, items: [PurchaseItem(product: cashier.inventory.products.first, qty: 5, unitCost: 2700)], paidAmount: 5000, userName: a.name);
     final cGhee = cashier.inventory.products.firstWhere((p) => p.name == 'Ghee');
     cashier.purchasing.createPurchase(supplier: supplier, items: [PurchaseItem(product: cGhee, qty: 2, unitCost: 16800, unit: 'box', size: 4)], userName: a.name);
+    // A wrongly entered line goes back at the bill's cost (re-prices the rest).
+    cashier.purchasing.recordPurchaseReturn(supplier, cGhee, 4, 'entered by mistake', userName: a.name, unitCost: 17000 / 4);
     cashier.suppliers.recordPayment(supplier, 1000, 'part', userName: a.name);
     cashier.cash.addExpense('Rent', 3000, 'Sept', createdByName: a.name);
     cashier.cash.transfer('cash', 'bank', 2000, '', userName: a.name);

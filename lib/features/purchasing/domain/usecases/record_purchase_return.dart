@@ -17,8 +17,16 @@ class RecordPurchaseReturn {
   final AuditRepository _audit;
   final Books _books;
 
-  void call(Supplier supplier, Product product, double qty, String reason, {required String userName}) {
-    final unitCost = product.purchasePrice;
+  /// [qty] in base units; [unitCost] per base unit, defaulting to the
+  /// product's average cost (pass the bill's cost to undo a wrong purchase line).
+  void call(Supplier supplier, Product product, double qty, String reason, {required String userName, double? unitCost}) {
+    unitCost ??= product.purchasePrice;
+    // Weighted average in reverse: what's left carries the stock value minus
+    // what went back, so the books' stock value still equals qty × cost.
+    final left = product.stockQty - qty;
+    if (left > 0 && (unitCost - product.purchasePrice).abs() > 1e-9) {
+      _products.updateProduct(product, purchasePrice: (product.stockQty * product.purchasePrice - qty * unitCost) / left);
+    }
     _products.decreaseStock(product, qty);
     _suppliers.applyPayableChange(supplier, -(qty * unitCost));
     final record = PurchaseReturn(

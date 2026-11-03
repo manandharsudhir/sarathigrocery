@@ -43,7 +43,7 @@ class PurchasesScreen extends StatelessWidget {
                       contentPadding: EdgeInsets.zero,
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseDetailScreen(
                             purchase: p,
-                            openSupplier: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SupplierDetailScreen(supplier: p.supplier, controller: suppliers, purchasing: purchasing, cash: cash, auth: auth))),
+                            openSupplier: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SupplierDetailScreen(supplier: p.supplier, controller: suppliers, purchasing: purchasing, cash: cash, inventory: inventory, auth: auth))),
                           ))),
                       title: Text(p.supplier.businessName),
                       subtitle: Text('${p.id} · ${formatDate(p.date)} · ${p.items.length} items'),

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sarathigrocery/features/purchasing/presentation/widgets/return_to_supplier_sheet.dart';
 import 'package:sarathigrocery/app/injection.dart';
 import 'package:sarathigrocery/app/accountant_export.dart';
 import 'package:sarathigrocery/app/daily_summary_export.dart';
@@ -435,6 +436,31 @@ void main() {
       expect(pl.costs[Acc.expense('Rent')], 15000);
       expect(fresh.accounting.statements.balanceSheet(DateTime.now()).liabilities[Acc.loan('NIC Asia')], 90000);
       expect(fresh.accounting.statements.balanceSheet(DateTime.now()).equity[Acc.drawings('Owner')], -1500);
+    });
+
+    test('returning a wrongly entered purchase line at the bill\'s cost undoes stock and payable exactly', () async {
+      final s = await TestBusiness.create();
+      final owner = await s.device(UserRole.owner);
+      final user = owner.auth.currentUser!;
+      owner.accounting.saveSetup(owners: const [OwnerShare('Owner', 100)], by: user);
+      final supplier = owner.suppliers.suppliers.first;
+      final rice = owner.inventory.createProduct(name: 'Rice', category: 'General', unitPrice: 1200, purchasePrice: 0, stockQty: 0, reorderLevel: 1);
+      final owedBefore = supplier.amountPayable;
+      owner.purchasing.createPurchase(supplier: supplier, items: [PurchaseItem(product: rice, qty: 10, unitCost: 800)], userName: 'Owner');
+      owner.purchasing.createPurchase(supplier: supplier, items: [PurchaseItem(product: rice, qty: 5, unitCost: 1000)], userName: 'Owner'); // never bought
+      expect(returnProblem(rice, 16, 1000, 'x'), isNotNull, reason: 'cannot return more than is in stock');
+      expect(returnProblem(rice, 5, 1000, ' '), isNotNull, reason: 'reason required');
+      owner.purchasing.recordPurchaseReturn(supplier, rice, 5, 'entered by mistake', userName: 'Owner', unitCost: 1000);
+      await pumpEventQueue();
+
+      expect(rice.stockQty, 10);
+      expect(rice.purchasePrice, closeTo(800, 0.01), reason: 'average cost back to the real purchase');
+      expect(returnProblem(rice, 10, 900, 'x'), isNotNull, reason: 'returning everything must use average cost');
+      expect(supplier.amountPayable, closeTo(owedBefore + 8000, 0.01));
+      expect(owner.purchasing.purchaseReturns.last.total, 5000);
+      expect(lastSupplierOf(rice, owner.purchasing), supplier);
+      final fresh = await s.device(UserRole.owner);
+      expectBalanced(fresh);
     });
 
     test('daily summary: closing balances per day match the books, flows exclude cancelled/reversed, CSV + PDF export', () async {

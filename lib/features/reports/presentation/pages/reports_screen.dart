@@ -315,7 +315,7 @@ class _StockMovementScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = <MapEntry<DateTime, String>>[
-      ...inventory.adjustments.map((a) => MapEntry(a.date, '${a.type.name} · ${a.product.name} · ${a.type == AdjustmentType.returned ? '+' : '-'}${formatQty(a.qty)} ${a.product.unitLabel}')),
+      ...inventory.adjustments.map((a) => MapEntry(a.date, '${a.type.name} · ${a.product.name} · ${a.type == AdjustmentType.returned ? '+' : '-'}${a.product.describeQty(a.qty)}')),
       ...purchasing.purchases.expand((p) => p.items.map((i) => MapEntry(p.date, 'Purchase · ${i.product.name} · +${formatQty(i.qty)} ${i.unit}'))),
       ...sales.sales.where((s) => s.status == SaleStatus.completed).expand((s) => s.items.map((i) => MapEntry(s.date, 'Sale · ${i.product.name} · -${formatQty(i.qty)} ${i.unit}'))),
     ]..sort((a, b) => b.key.compareTo(a.key));

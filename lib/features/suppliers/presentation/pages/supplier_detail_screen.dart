@@ -8,16 +8,19 @@ import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dar
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/pages/purchase_detail_screen.dart';
+import 'package:sarathigrocery/features/purchasing/presentation/widgets/return_to_supplier_sheet.dart';
+import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/suppliers/domain/entities/supplier.dart';
 import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
 
 class SupplierDetailScreen extends StatelessWidget {
-  const SupplierDetailScreen({super.key, required this.supplier, required this.controller, required this.purchasing, required this.cash, required this.auth});
+  const SupplierDetailScreen({super.key, required this.supplier, required this.controller, required this.purchasing, required this.cash, required this.inventory, required this.auth});
 
   final Supplier supplier;
   final SuppliersController controller;
   final PurchasingController purchasing;
   final CashController cash;
+  final InventoryController inventory;
   final AuthController auth;
 
   @override
@@ -44,6 +47,13 @@ class SupplierDetailScreen extends StatelessWidget {
                   onPressed: () => _showPaySheet(context),
                   icon: const Icon(Icons.payments),
                   label: const Text('Record Payment'),
+                ),
+              if (auth.can(Permission.createPurchases))
+                OutlinedButton.icon(
+                  onPressed: () => showReturnToSupplierSheet(context,
+                      purchasing: purchasing, suppliers: controller.suppliers, products: inventory.products, supplier: supplier, userName: auth.currentUser?.name ?? ''),
+                  icon: const Icon(Icons.assignment_return_outlined),
+                  label: const Text('Return to supplier'),
                 ),
               const SizedBox(height: 24),
               Text('Purchase History', style: Theme.of(context).textTheme.titleMedium),

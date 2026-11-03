@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
+import 'package:sarathigrocery/features/purchasing/presentation/widgets/return_to_supplier_sheet.dart';
+
 import 'package:sarathigrocery/app/accountant_export.dart';
 import 'package:sarathigrocery/app/daily_summary_export.dart';
 import 'package:sarathigrocery/app/injection.dart';
@@ -71,7 +74,7 @@ _RoleNav _navFor(AppUser user, AppScope scope, void Function(int) goToTab) {
               openSales: () => goToTab(3),
             ),
           ),
-          InventoryScreen(controller: scope.inventory, auth: scope.auth, settings: scope.settings),
+          InventoryScreen(controller: scope.inventory, auth: scope.auth, settings: scope.settings, returnToSupplier: _returnToSupplier(scope)),
           StaffOrdersScreen(controller: scope.ordering, auth: scope.auth, customers: scope.customers, inventory: scope.inventory),
           SalesHistoryScreen(sales: scope.sales, inventory: scope.inventory, customers: scope.customers, auth: scope.auth),
           MoreMenuScreen(items: _ownerMoreItems(scope)),
@@ -111,7 +114,7 @@ _RoleNav _navFor(AppUser user, AppScope scope, void Function(int) goToTab) {
           ),
           StaffOrdersScreen(controller: scope.ordering, auth: scope.auth, customers: scope.customers, inventory: scope.inventory),
           SalesHistoryScreen(sales: scope.sales, inventory: scope.inventory, customers: scope.customers, auth: scope.auth),
-          InventoryScreen(controller: scope.inventory, auth: scope.auth, settings: scope.settings),
+          InventoryScreen(controller: scope.inventory, auth: scope.auth, settings: scope.settings, returnToSupplier: _returnToSupplier(scope)),
           handlesCash ? MoreMenuScreen(items: _cashStaffMoreItems(scope)) : CustomersScreen(controller: scope.customers, auth: scope.auth),
         ],
       );
@@ -141,7 +144,7 @@ List<MoreMenuItem> _ownerMoreItems(AppScope scope) {
     if (scope.settings.current.vatRegistered) _vatBooks(scope),
     if (settings.has(Feature.suppliers)) ...[
       MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, cash: scope.cash, auth: scope.auth)),
-      MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, auth: scope.auth)),
+      MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, inventory: scope.inventory, auth: scope.auth)),
     ],
     if (settings.has(Feature.categories)) MoreMenuItem(icon: Icons.category_outlined, label: 'Categories', builder: (_) => CategoriesScreen(controller: scope.inventory)),
     _reports(scope),
@@ -161,7 +164,7 @@ List<MoreMenuItem> _cashStaffMoreItems(AppScope scope) => [
       MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth)),
       if (scope.settings.has(Feature.suppliers)) ...[
         MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, cash: scope.cash, auth: scope.auth)),
-        MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, auth: scope.auth)),
+        MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, inventory: scope.inventory, auth: scope.auth)),
       ],
       _reports(scope),
     ];
@@ -230,3 +233,14 @@ class _AppShellState extends State<AppShell> {
     );
   }
 }
+
+/// Inventory's "Return to supplier", for users the rules let record one.
+void Function(BuildContext, Product)? _returnToSupplier(AppScope scope) =>
+    scope.settings.has(Feature.suppliers) && scope.auth.can(Permission.createPurchases)
+        ? (context, product) => showReturnToSupplierSheet(context,
+            purchasing: scope.purchasing,
+            suppliers: scope.suppliers.suppliers,
+            products: scope.inventory.products,
+            product: product,
+            userName: scope.auth.currentUser?.name ?? '')
+        : null;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
@@ -9,11 +10,12 @@ import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppl
 import 'package:sarathigrocery/features/suppliers/presentation/pages/supplier_detail_screen.dart';
 
 class SuppliersScreen extends StatelessWidget {
-  const SuppliersScreen({super.key, required this.controller, required this.purchasing, required this.cash, required this.auth});
+  const SuppliersScreen({super.key, required this.controller, required this.purchasing, required this.cash, required this.inventory, required this.auth});
 
   final SuppliersController controller;
   final PurchasingController purchasing;
   final CashController cash;
+  final InventoryController inventory;
   final AuthController auth;
 
   @override
@@ -35,7 +37,7 @@ class SuppliersScreen extends StatelessWidget {
                 title: Text(supplier.businessName, style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text(supplier.address),
                 trailing: Text(formatNpr(supplier.amountPayable), style: TextStyle(color: supplier.amountPayable > 0 ? Colors.red : Colors.green, fontWeight: FontWeight.w600)),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SupplierDetailScreen(supplier: supplier, controller: controller, purchasing: purchasing, cash: cash, auth: auth))),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SupplierDetailScreen(supplier: supplier, controller: controller, purchasing: purchasing, cash: cash, inventory: inventory, auth: auth))),
               ),
             );
           },
