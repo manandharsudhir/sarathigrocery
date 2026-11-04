@@ -6,32 +6,46 @@ import 'package:sarathigrocery/features/customers/presentation/pdf/payment_docum
 import 'package:sarathigrocery/features/sales/domain/entities/credit_note.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale.dart';
 import 'package:sarathigrocery/features/sales/presentation/pdf/invoice_pdf.dart';
-import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
+import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
+import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
+import 'package:sarathigrocery/features/sales/presentation/widgets/collect_on_bill.dart';
 
-/// A sale's bill (tax invoice in VAT shops), or its credit note; shareable as PDF.
+/// A sale's bill (tax invoice in VAT shops), or its credit note; shareable as
+/// PDF. An udharo bill shows what's paid and due, and (with [auth] allowed to
+/// record payments) collects against it.
 class InvoiceScreen extends StatelessWidget {
-  const InvoiceScreen({super.key, required this.sale, required this.seller, this.creditNote});
+  const InvoiceScreen({super.key, required this.sale, required this.sales, this.auth, this.creditNote});
 
   final Sale sale;
-  final BusinessSettings seller;
+  final SalesController sales;
+  final AuthController? auth;
   final CreditNote? creditNote;
 
   @override
-  Widget build(BuildContext context) {
-    final c = billContent(sale, seller, creditNote: creditNote);
+  Widget build(BuildContext context) => ListenableBuilder(listenable: sales, builder: (context, _) => _build(context));
+
+  Widget _build(BuildContext context) {
+    final seller = sales.seller;
+    final paid = creditNote == null ? sales.paidOn(sale) : null;
+    final canCollect = paid != null && sale.total - paid > 0.005 && (auth?.can(Permission.recordPayments) ?? false);
+    final c = billContent(sale, seller, creditNote: creditNote, paid: paid);
     return Scaffold(
+      floatingActionButton: canCollect
+          ? FloatingActionButton.extended(heroTag: null, icon: const Icon(Icons.payments_outlined), label: const Text('Collect'), onPressed: () => collectOnBill(context, sale, sales, auth!))
+          : null,
       appBar: AppBar(
         title: Text(c.title),
         actions: [
           IconButton(
             tooltip: 'Share PDF',
             icon: const Icon(Icons.share),
-            onPressed: () async => sharePdf(await billPdf(sale, seller, creditNote: creditNote), billFileName(sale, creditNote)),
+            onPressed: () async => sharePdf(await billPdf(sale, seller, creditNote: creditNote, paid: paid), billFileName(sale, creditNote)),
           ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 96),
         children: [
           Text(c.title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
@@ -52,8 +66,8 @@ class InvoiceScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text(k, style: TextStyle(fontWeight: k == 'Total' ? FontWeight.bold : null)),
-                Text(v, style: TextStyle(fontWeight: k == 'Total' ? FontWeight.bold : null)),
+                Text(k, style: TextStyle(fontWeight: k == 'Total' || k == 'Balance due' ? FontWeight.bold : null)),
+                Text(v, style: TextStyle(fontWeight: k == 'Total' || k == 'Balance due' ? FontWeight.bold : null)),
               ]),
             ),
         ],

@@ -121,6 +121,7 @@ service cloud.firestore {
       function deliverer() { return active() && 'deliverOrders' in permissions(); }
 
       function orderPath(id) { return /databases/$(database)/documents/shops/$(shopId)/orders/$(id); }
+      function salePath(id) { return /databases/$(database)/documents/shops/$(shopId)/sales/$(id); }
       function assignedToMe(orderData) { return orderData.get('assignedToId', null) == request.auth.uid; }
 
       // Settings → Safeguards: 'signature', 'phoneConfirm', 'handover',
@@ -394,6 +395,11 @@ service cloud.firestore {
             && assignedToMe(getAfter(orderPath(request.resource.data.orderId)).data)))
           && (request.resource.data.orderId == null
             || getAfter(orderPath(request.resource.data.orderId)).data.customerId == request.resource.data.customerId)
+          // Collected against a bill (part paid at the counter, or later): that
+          // customer's credit sale, possibly created in the same batch.
+          && (request.resource.data.get('saleId', null) == null
+            || (getAfter(salePath(request.resource.data.saleId)).data.customerId == request.resource.data.customerId
+              && getAfter(salePath(request.resource.data.saleId)).data.isCredit == true))
           // Only the till (reconcileCash) may settle, and only its own collection at
           // creation. Without the handover safeguard every collector does so.
           && (request.resource.data.settledAt == null

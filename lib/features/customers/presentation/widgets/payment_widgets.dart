@@ -124,7 +124,11 @@ class CollectPaymentForm extends StatefulWidget {
     this.orderAlreadyPaid = 0,
     this.allowZero = false,
     this.signatureRequired = false,
+    this.billLabel = 'order',
   });
+
+  /// What [orderTotal] is for, in the receipt split ("order", "bill").
+  final String billLabel;
 
   final Customer customer;
   final String submitLabel;
@@ -204,7 +208,7 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('${widget.submitLabel} · ${widget.customer.name}', style: Theme.of(context).textTheme.titleMedium),
-            Text('Balance before: ${formatNpr(balanceBefore)}${widget.orderTotal == null ? '' : ' (incl. this order ${formatNpr(orderDue)})'}'),
+            Text('Balance before: ${formatNpr(balanceBefore)}${widget.orderTotal == null ? '' : ' (incl. this ${widget.billLabel} ${formatNpr(orderDue)})'}'),
             const SizedBox(height: 12),
             TextField(
               controller: _amount,
@@ -246,8 +250,8 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
                   padding: const EdgeInsets.all(12),
                   child: Text(
                     [
-                      if (widget.orderTotal != null) '${formatNpr(toOrder)} for this order',
-                      if (toEarlier > 0) '${formatNpr(toEarlier)} toward earlier balance',
+                      if (widget.orderTotal != null) '${formatNpr(toOrder)} for this ${widget.billLabel}',
+                      if (toEarlier > 0) '${formatNpr(toEarlier)} toward ${widget.orderTotal == null ? 'earlier balance' : 'older bills or advance'}',
                       'Balance after: ${formatNpr(balanceBefore - _value)}',
                     ].join('\n'),
                   ),

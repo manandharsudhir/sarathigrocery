@@ -64,7 +64,12 @@ class CustomerStatement {
   double dueFor(Sale sale) => sale.status == SaleStatus.completed ? sale.total - paidFor(sale) : 0;
 }
 
-/// Payments settle the order they were collected against first, then the
+String _paymentTitle(CustomerPayment p, List<Sale> bills) {
+  final bill = p.saleId == null ? null : bills.where((s) => s.id == p.saleId).firstOrNull;
+  return bill == null ? 'Payment' : 'Payment for bill ${bill.invoiceNumber ?? bill.id}';
+}
+
+/// Payments settle the bill or order they were collected against first, then the
 /// oldest outstanding bills (opening balance counts as the oldest).
 CustomerStatement buildStatement(Customer customer, Iterable<Sale> allSales, Iterable<CustomerPayment> allPayments) {
   final bills = allSales.where((s) => s.isCredit && s.customer?.id == customer.id).toList()..sort((a, b) => a.date.compareTo(b.date));
@@ -92,7 +97,7 @@ CustomerStatement buildStatement(Customer customer, Iterable<Sale> allSales, Ite
     final p = e.payment;
     final title = s != null
         ? '${s.orderId != null ? 'Order ${s.orderId} invoice' : 'Credit sale ${s.id}'}${s.status == SaleStatus.completed ? '' : ' (${s.status.name})'}'
-        : 'Payment · ${paymentMethodLabel(p!.method)}${p.isReversed ? ' (undone)' : ''}';
+        : '${_paymentTitle(p!, bills)} · ${paymentMethodLabel(p.method)}${p.isReversed ? ' (undone)' : ''}';
     lines.add(StatementLine(date: e.date, title: title, change: effect(e), balance: running, sale: s, payment: p));
   }
 
@@ -121,7 +126,9 @@ CustomerStatement buildStatement(Customer customer, Iterable<Sale> allSales, Ite
     }
 
     final payment = payments.where((p) => p.id == paymentId).firstOrNull;
-    final linked = payment?.orderId == null ? null : bills.where((s) => s.orderId == payment!.orderId && due.containsKey(s.id)).firstOrNull;
+    final linked = payment == null
+        ? null
+        : bills.where((s) => due.containsKey(s.id) && (s.id == payment.saleId || (payment.orderId != null && s.orderId == payment.orderId))).firstOrNull;
     if (linked != null) pay(linked.id, due[linked.id]!);
     pay('opening', openingDue);
     for (final s in bills) {

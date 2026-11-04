@@ -253,7 +253,7 @@ class _ProductSalesScreen extends StatelessWidget {
                 '${formatNpr(item.unitPrice)}/${item.unit}',
               ].join(' · ')),
               trailing: Text(formatNpr(item.lineTotal)),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, seller: sales.seller))),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, sales: sales))),
             ),
         ],
       ),

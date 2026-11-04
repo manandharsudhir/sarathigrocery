@@ -12,6 +12,8 @@ import 'package:sarathigrocery/features/sales/domain/entities/sale_status.dart';
 import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
 import 'package:sarathigrocery/features/sales/presentation/pages/invoice_screen.dart';
 import 'package:sarathigrocery/features/sales/presentation/pages/new_sale_screen.dart';
+import 'package:sarathigrocery/features/sales/presentation/widgets/collect_on_bill.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/customer_statement.dart';
 
 class SalesHistoryScreen extends StatelessWidget {
   const SalesHistoryScreen({super.key, required this.sales, required this.inventory, required this.customers, required this.auth});
@@ -28,6 +30,9 @@ class SalesHistoryScreen extends StatelessWidget {
       builder: (context, _) {
         final visibleSales = sales.sales.reversed.toList();
         final canSell = auth.can(Permission.createSales);
+        final canCollect = auth.can(Permission.recordPayments);
+        final statements = <String, CustomerStatement>{};
+        void openBill(Sale sale) => Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, sales: sales, auth: auth)));
         void newSale() => Navigator.push(context, MaterialPageRoute(builder: (_) => NewSaleScreen(sales: sales, inventory: inventory, customers: customers, auth: auth)));
 
         return Scaffold(
@@ -40,11 +45,18 @@ class SalesHistoryScreen extends StatelessWidget {
                   separatorBuilder: (_, _) => const Divider(),
                   itemBuilder: (context, index) {
                     final sale = visibleSales[index];
+                    final paid = sales.paidOn(sale, statements);
+                    final due = paid == null ? 0.0 : sale.total - paid;
+                    final payState = !sale.isCredit || (paid != null && due < 0.005)
+                        ? 'Paid'
+                        : paid == null || paid < 0.005
+                            ? 'Udharo'
+                            : 'Part paid · Due ${formatNpr(due)}';
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, seller: sales.seller))),
+                      onTap: () => openBill(sale),
                       title: Text(sale.customer?.name ?? 'Walk-in customer'),
-                      subtitle: Text('${sale.invoiceNumber ?? sale.id} · ${formatDate(sale.date)} · ${sale.isCredit ? 'Udharo' : 'Paid'}'),
+                      subtitle: Text('${sale.invoiceNumber ?? sale.id} · ${formatDate(sale.date)} · $payState'),
                       trailing: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -60,12 +72,22 @@ class SalesHistoryScreen extends StatelessWidget {
                             Text(sale.status.name, style: const TextStyle(color: Colors.red, fontSize: 12))
                           else ...[
                             if (sale.flaggedForApproval) const Text('Over credit limit', style: TextStyle(color: Colors.orange, fontSize: 12)),
-                            if (auth.can(Permission.cancelSales))
-                            TextButton(
-                              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-                              onPressed: () => _showCancelReturnSheet(context, sale),
-                              child: const Text('Cancel / Return', style: TextStyle(fontSize: 12)),
-                            ),
+                            Row(mainAxisSize: MainAxisSize.min, children: [
+                              if (canCollect && due > 0.005)
+                                TextButton(
+                                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4), minimumSize: const Size(0, 0)),
+                                  onPressed: () async {
+                                    if (await collectOnBill(context, sale, sales, auth) && context.mounted) openBill(sale);
+                                  },
+                                  child: const Text('Collect', style: TextStyle(fontSize: 12)),
+                                ),
+                              if (auth.can(Permission.cancelSales))
+                                TextButton(
+                                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4), minimumSize: const Size(0, 0)),
+                                  onPressed: () => _showCancelReturnSheet(context, sale),
+                                  child: const Text('Cancel / Return', style: TextStyle(fontSize: 12)),
+                                ),
+                            ]),
                           ],
                         ],
                       ),

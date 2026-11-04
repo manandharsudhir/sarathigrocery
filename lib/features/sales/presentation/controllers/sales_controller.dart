@@ -4,7 +4,13 @@ import 'package:sarathigrocery/core/services/app_signal.dart';
 import 'package:sarathigrocery/features/accounting/domain/books.dart';
 import 'package:sarathigrocery/features/audit/domain/repositories/audit_repository.dart';
 import 'package:sarathigrocery/features/cash/domain/repositories/cash_repository.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/app_user.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/customer_statement.dart';
+import 'package:sarathigrocery/features/customers/domain/repositories/payment_repository.dart';
+import 'package:sarathigrocery/features/customers/domain/usecases/record_payment.dart';
 import 'package:sarathigrocery/features/customers/domain/repositories/customer_repository.dart';
 import 'package:sarathigrocery/features/inventory/domain/repositories/product_repository.dart';
 import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
@@ -35,6 +41,8 @@ class SalesController extends ChangeNotifier {
     BillNumbers? billNumbers,
     this._commit,
     this._settings,
+    this._payments,
+    this._recordPayment,
   })  : _moneyAccounts = moneyAccounts ?? (() => const ['cash', 'bank', 'wallet']),
         _vat = vat ?? (() => null),
         _numbers = billNumbers,
@@ -48,6 +56,8 @@ class SalesController extends ChangeNotifier {
   final List<String> Function() _moneyAccounts;
   final VatTerms? Function() _vat;
   final BusinessSettings Function()? _settings;
+  final PaymentRepository? _payments;
+  final RecordPayment? _recordPayment;
 
   /// The shop as printed on bills.
   BusinessSettings get seller => _settings?.call() ?? BusinessSettings(businessName: businessName, businessAddress: '', businessPhone: '', defaultLowStockThreshold: 0, taxPercent: 0);
@@ -86,6 +96,7 @@ class SalesController extends ChangeNotifier {
     bool allowBelowMinimum = false,
     String account = 'cash',
     BillNumber? bill,
+    double paidNow = 0,
   }) {
     final sale = _recordSale(
       items: items,
@@ -97,6 +108,7 @@ class SalesController extends ChangeNotifier {
       account: account,
       vat: _vat(),
       bill: bill,
+      paidNow: paidNow,
     );
     if (bill != null) _numbers!.take(bill);
     notifyListeners();
@@ -129,6 +141,9 @@ class SalesController extends ChangeNotifier {
   }
 
   /// Records a sale; in a VAT shop as a numbered tax invoice (online).
+  /// [paidNow] on an udharo sale: part paid at the counter, recorded as a
+  /// payment against the bill in the same batch, so the balance only goes
+  /// up by the rest.
   Future<Sale> sell({
     required List<SaleItem> items,
     required bool isCredit,
@@ -137,11 +152,46 @@ class SalesController extends ChangeNotifier {
     String? userId,
     bool allowBelowMinimum = false,
     String account = 'cash',
+    ({double amount, PaymentMethod method, String reference, AppUser collector})? paidNow,
   }) async {
-    Sale record(BillNumber? bill) => recordSale(
-        items: items, isCredit: isCredit, customer: customer, userName: userName, userId: userId, allowBelowMinimum: allowBelowMinimum, account: account, bill: bill);
+    if (paidNow != null) {
+      if (!isCredit || customer == null) throw PaymentException('Only a customer\'s udharo sale can be part paid.');
+      if (paidNow.amount <= 0) throw PaymentException('Enter an amount greater than zero.');
+      if (!paidNow.collector.can(Permission.recordPayments)) throw PaymentException('You are not allowed to record this payment.');
+      if (paidNow.method != PaymentMethod.cash && paidNow.reference.trim().isEmpty) {
+        throw PaymentException('Enter the ${paymentMethodLabel(paidNow.method)} reference so it can be verified.');
+      }
+    }
+    // One synchronous turn: sale + payment are one batch.
+    Sale record(BillNumber? bill) {
+      final sale = recordSale(
+          items: items, isCredit: isCredit, customer: customer, userName: userName, userId: userId, allowBelowMinimum: allowBelowMinimum, account: account, bill: bill, paidNow: paidNow?.amount ?? 0);
+      if (paidNow != null) {
+        _recordPayment!(customer!, paidNow.amount, method: paidNow.method, reference: paidNow.reference, sale: sale, collector: paidNow.collector);
+      }
+      return sale;
+    }
     if (!issuesTaxInvoices) return record(null);
     return _numbered('invoice', record);
+  }
+
+  /// How much of udharo bill [sale] is paid off, from the customer's
+  /// statement (payments pay their own bill first, then the oldest). Null
+  /// for paid or reversed sales. Pass [cache] when asking for many sales.
+  double? paidOn(Sale sale, [Map<String, CustomerStatement>? cache]) {
+    final customer = sale.customer;
+    if (!sale.isCredit || customer == null || sale.status != SaleStatus.completed || _payments == null) return null;
+    final statement = (cache ?? {}).putIfAbsent(customer.id, () => buildStatement(customer, sales, _payments.payments));
+    return statement.paidFor(sale);
+  }
+
+  /// Collects [amount] against [sale] (paid off first; the rest goes to
+  /// older bills, then advance).
+  CustomerPayment collect(Sale sale, double amount, {required PaymentMethod method, String reference = '', String? signature, String signedName = '', required AppUser collector}) {
+    final payment = _recordPayment!(sale.customer!, amount, method: method, reference: reference, signature: signature, signedName: signedName, sale: sale, collector: collector);
+    notifyListeners();
+    AppSignal.instance.ping();
+    return payment;
   }
 
   /// Cancel ([SaleStatus.cancelled]) or return a sale; a tax invoice is

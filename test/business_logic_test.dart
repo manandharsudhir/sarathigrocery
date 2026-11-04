@@ -137,6 +137,37 @@ void main() {
       scope.sales.recordSale(items: [SaleItem(product: product, qty: 1, unitPrice: product.unitPrice)], isCredit: false, userName: 'Owner');
       expect(scope.cash.cashInHand, cashBefore + product.unitPrice);
     });
+
+    test('part paid sale: balance and credit limit take only the rest; collecting from the bill pays it first', () async {
+      final scope = await signedIn(UserRole.owner);
+      final me = scope.auth.currentUser!;
+      final product = scope.inventory.products.first;
+      final customer = scope.customers.createCustomer(name: 'Part Payer', phone: '9811111111', location: 'Patan', creditLimit: product.unitPrice + 1000, by: me);
+      final qty = (1500 / product.unitPrice).ceilToDouble();
+      List<SaleItem> items() => [SaleItem(product: product, qty: qty, unitPrice: product.unitPrice)];
+
+      final older = await scope.sales.sell(items: [SaleItem(product: product, qty: 1, unitPrice: product.unitPrice)], isCredit: true, customer: customer, userName: me.name, userId: me.id);
+      await pumpEventQueue();
+      final before = customer.outstandingBalance;
+      final sale = await scope.sales.sell(
+          items: items(), isCredit: true, customer: customer, userName: me.name, userId: me.id, paidNow: (amount: qty * product.unitPrice - 600, method: PaymentMethod.cash, reference: '', collector: me));
+      expect(customer.outstandingBalance, closeTo(before + 600, 0.01));
+      expect(sale.flaggedForApproval, isFalse, reason: 'only the unpaid 600 counts toward the limit');
+      expect(scope.payments.payments.last.saleId, sale.id);
+      expect(scope.sales.paidOn(sale), closeTo(sale.total - 600, 0.01), reason: 'the payment pays its own bill, not the older one');
+      expect(scope.sales.paidOn(older), 0);
+
+      await pumpEventQueue();
+      scope.sales.collect(sale, 700, method: PaymentMethod.cash, collector: me);
+      expect(scope.sales.paidOn(sale), closeTo(sale.total, 0.01));
+      expect(scope.sales.paidOn(older), closeTo(100, 0.01), reason: 'the extra goes to the oldest bill');
+      expect(customer.outstandingBalance, closeTo(before - 100, 0.01));
+
+      expect(() => scope.sales.sell(items: items(), isCredit: false, userName: me.name, paidNow: (amount: 10, method: PaymentMethod.cash, reference: '', collector: me)),
+          throwsA(isA<PaymentException>()), reason: 'a walk-in pays in full');
+      await pumpEventQueue();
+      expect(scope.accounting.booksBalanced, isTrue);
+    });
   });
 
   group('purchasing', () {

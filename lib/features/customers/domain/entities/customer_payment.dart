@@ -43,6 +43,7 @@ class CustomerPayment {
     required this.method,
     this.reference = '',
     this.orderId,
+    this.saleId,
     this.appliedToOrder = 0,
     required this.balanceAfter,
     required this.collectedById,
@@ -74,6 +75,10 @@ class CustomerPayment {
 
   /// The order this was collected against; it's paid off first.
   final String? orderId;
+
+  /// The bill (sale id) this was collected against: paid at the counter
+  /// with the sale, or collected later from the sales list. Paid off first.
+  final String? saleId;
 
   /// Receipt figures as shown at collection time.
   final double appliedToOrder;

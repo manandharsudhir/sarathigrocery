@@ -27,7 +27,9 @@ class RecordSale {
   /// Returns the recorded sale; [Sale.flaggedForApproval] marks an udharo
   /// sale past the customer's credit limit (allowed; the owner is told). Throws
   /// [BelowMinimumPriceException] for a line under its minimum price unless
-  /// [allowBelowMinimum] (`Permission.sellBelowMinimum`).
+  /// [allowBelowMinimum] (`Permission.sellBelowMinimum`). [paidNow] is the
+  /// part of an udharo sale paid at the counter (recorded by the caller as
+  /// a payment against it): only the rest counts toward the credit limit.
   Sale call({
     required List<SaleItem> items,
     required bool isCredit,
@@ -38,6 +40,7 @@ class RecordSale {
     String account = 'cash',
     VatTerms? vat,
     BillNumber? bill,
+    double paidNow = 0,
   }) {
     if (vat != null && bill == null) throw StateError('A VAT shop\'s sale needs a tax invoice number.');
     // ponytail: checked in the app only — rules can't loop over lines; a
@@ -54,7 +57,8 @@ class RecordSale {
     final lines = items.fold(0.0, (sum, i) => sum + i.lineTotal);
     final vatAmount = vatOn(lines - exempt, vat);
     final total = lines + (vat != null && !vat.included ? vatAmount : 0);
-    final needsApproval = isCredit && customer != null && customer.outstandingBalance + total > customer.creditLimit;
+    if (paidNow > total + 0.005) throw ArgumentError('Paid now (${paidNow.toStringAsFixed(2)}) is more than the bill (${total.toStringAsFixed(2)}).');
+    final needsApproval = isCredit && customer != null && customer.outstandingBalance + total - paidNow > customer.creditLimit;
 
     final sale = _sales.record(
       items: items,
@@ -98,7 +102,7 @@ class RecordSale {
 
     _audit.record(userName, 'Sale recorded', 'Sale', entityId: sale.id, newValue: sale.total.toStringAsFixed(0));
     if (needsApproval) {
-      _notifications.notify('Over credit limit', '${customer.name}: udharo sale by $userName takes them ${(customer.outstandingBalance - customer.creditLimit).toStringAsFixed(0)} over their limit.', role: UserRole.owner);
+      _notifications.notify('Over credit limit', '${customer.name}: udharo sale by $userName takes them ${(customer.outstandingBalance - paidNow - customer.creditLimit).toStringAsFixed(0)} over their limit.', role: UserRole.owner);
     }
     auditBelowMinimum(_audit, _notifications, userName, 'Sale', sale.id, [for (final i in below) (product: i.product.name, unit: i.unit, price: i.unitPrice, minimum: i.product.floorFor(i.unit) ?? 0)]);
 

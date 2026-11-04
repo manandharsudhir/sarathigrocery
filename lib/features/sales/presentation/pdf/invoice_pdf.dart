@@ -16,7 +16,9 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
   Sale sale,
   BusinessSettings seller, {
   CreditNote? creditNote,
+  double? paid,
 }) {
+  final showPaid = paid != null && sale.isCredit && creditNote == null;
   final tax = sale.invoiceNumber != null;
   final date = creditNote?.date ?? sale.date;
   return (
@@ -30,7 +32,7 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
       ('Date', '${formatBs(date)} (${formatDate(date)})'),
       ('Buyer', sale.customer?.name ?? 'Walk-in customer'),
       if (sale.buyerPan.isNotEmpty) ('Buyer PAN', sale.buyerPan),
-      ('Payment', billPayment(sale)),
+      ('Payment', billPayment(sale, paid: paid)),
     ],
     lines: [
       for (final i in sale.items)
@@ -43,6 +45,7 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
         ('VAT', formatNpr(sale.vatAmount)),
       ],
       ('Total', formatNpr(sale.total)),
+      if (showPaid) ...[('Paid', formatNpr(paid)), ('Balance due', formatNpr(sale.total - paid))],
     ],
   );
 }
@@ -50,11 +53,11 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
 /// Printed bill, laid out like a typical Nepali tax invoice: shop header,
 /// customer block left / invoice block right, ruled item table, amount in
 /// words, totals, and signature lines.
-Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? creditNote}) {
+Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? creditNote, double? paid}) {
   final tax = sale.invoiceNumber != null;
   final date = creditNote?.date ?? sale.date;
   final now = DateTime.now();
-  final c = billContent(sale, seller, creditNote: creditNote);
+  final c = billContent(sale, seller, creditNote: creditNote, paid: paid);
   const small = pw.TextStyle(fontSize: 9);
   final bold = pw.TextStyle(fontWeight: pw.FontWeight.bold);
 
@@ -78,7 +81,7 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
     ('Customer Name', customer?.name ?? 'Walk-in customer'),
     if (customer != null && customer.location.isNotEmpty) ('Customer Address', customer.location),
     if (sale.buyerPan.isNotEmpty) ('Customer ${tax ? 'VAT' : 'PAN'} No', sale.buyerPan),
-    ('Mode of payment', billPayment(sale)),
+    ('Mode of payment', billPayment(sale, paid: paid)),
   ];
   final right = [
     ('Invoice Date', _dmy(date)),
@@ -93,17 +96,18 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
   const r = pw.TextAlign.right;
   const ctr = pw.TextAlign.center;
 
-  final totals = [...c.totals];
-  totals[totals.length - 1] = ('Total Amount', _money(sale.total));
-  for (var i = 0; i < totals.length - 1; i++) {
-    final (k, _) = totals[i];
-    totals[i] = (k == 'VAT' ? '${formatQty(seller.taxPercent)} % VAT' : k, _money(switch (k) {
-      'Exempt sales' => sale.exemptAmount,
-      'Taxable amount' => sale.taxableAmount,
-      'VAT' => sale.vatAmount,
-      _ => 0,
-    }));
-  }
+  final totals = [
+    for (final (k, v) in c.totals)
+      switch (k) {
+        'Total' => ('Total Amount', _money(sale.total)),
+        'VAT' => ('${formatQty(seller.taxPercent)} % VAT', _money(sale.vatAmount)),
+        'Exempt sales' => (k, _money(sale.exemptAmount)),
+        'Taxable amount' => (k, _money(sale.taxableAmount)),
+        'Paid' => (k, _money(paid ?? 0)),
+        'Balance due' => (k, _money(sale.total - (paid ?? 0))),
+        _ => (k, v),
+      },
+  ];
 
   final doc = pw.Document();
   doc.addPage(pw.Page(
@@ -212,7 +216,12 @@ pw.Widget _signature(String name, String label) => pw.SizedBox(
     );
 
 /// "Credit" for udharo, else the money account it was paid into.
-String billPayment(Sale sale) => sale.isCredit ? 'Credit' : accountName(sale.account);
+/// [paid]: how much of a credit bill is paid off so far, when known.
+String billPayment(Sale sale, {double? paid}) {
+  if (!sale.isCredit) return accountName(sale.account);
+  if (paid == null || paid < 0.005) return 'Credit';
+  return paid >= sale.total - 0.005 ? 'Paid' : 'Part paid';
+}
 
 String _two(int n) => n.toString().padLeft(2, '0');
 String _dmy(DateTime d) => '${_two(d.day)}/${_two(d.month)}/${d.year}';

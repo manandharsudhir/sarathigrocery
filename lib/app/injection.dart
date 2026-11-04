@@ -222,7 +222,7 @@ class AppScope {
       customers: CustomersController(customerRepository, auditRepository, payments, notificationRepository, books),
       payments: payments,
       suppliers: SuppliersController(supplierRepository, auditRepository, cashRepository, books),
-      sales: SalesController(saleRepository, productRepository, customerRepository, cashRepository, auditRepository, notificationRepository, () => settingsRepository.current.businessName, books, moneyAccounts: moneyAccounts, vat: vatTerms, billNumbers: billNumbers, commit: writes.flush, settings: () => settingsRepository.current),
+      sales: SalesController(saleRepository, productRepository, customerRepository, cashRepository, auditRepository, notificationRepository, () => settingsRepository.current.businessName, books, moneyAccounts: moneyAccounts, vat: vatTerms, billNumbers: billNumbers, commit: writes.flush, settings: () => settingsRepository.current, payments: paymentRepository, recordPayment: recordPayment),
       purchasing: PurchasingController(purchaseRepository, productRepository, supplierRepository, cashRepository, auditRepository, notificationRepository, books, moneyAccounts: moneyAccounts, vatShop: () => settingsRepository.current.vatRegistered, margin: () => settingsRepository.current.marginPercent),
       cash: CashController(cashRepository, books, auditRepository, () => settingsRepository.current),
       accounting: AccountingController(books, cashRepository, customerRepository, supplierRepository, productRepository, paymentRepository, saleRepository, settingsRepository, auditRepository),

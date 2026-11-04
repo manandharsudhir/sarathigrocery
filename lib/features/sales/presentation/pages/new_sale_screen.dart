@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/widgets/customer_picker.dart';
 import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
@@ -31,10 +32,32 @@ class NewSaleScreen extends StatefulWidget {
 
 class _NewSaleScreenState extends State<NewSaleScreen> {
   Customer? _customer;
-  bool _isCredit = false;
   final List<CartLine> _lines = [];
   String _account = 'cash';
   String? _error;
+
+  /// Blank = paid in full; less than the total puts the rest on udharo
+  /// (customers only).
+  final _paid = TextEditingController();
+  PaymentMethod _method = PaymentMethod.cash;
+  final _reference = TextEditingController();
+
+  /// What's paid now (null when the entry isn't a number).
+  double? get _paidNow {
+    final text = _paid.text.trim();
+    return _customer == null || text.isEmpty ? _bill.total : double.tryParse(text);
+  }
+
+  double get _onCredit => (_bill.total - (_paidNow ?? 0)).clamp(0.0, double.infinity);
+  bool get _isCredit => _onCredit > 0.005;
+  bool get _partPaid => _isCredit && (_paidNow ?? 0) > 0;
+
+  @override
+  void dispose() {
+    _paid.dispose();
+    _reference.dispose();
+    super.dispose();
+  }
 
   bool get _allowBelowMinimum => widget.auth.can(Permission.sellBelowMinimum);
 
@@ -60,23 +83,38 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
             selected: _customer,
             label: 'Customer (optional)',
             walkInLabel: 'Walk-in / Cash customer',
-            onSelected: (c) => setState(() {
-              _customer = c;
-              if (c == null) _isCredit = false;
-            }),
+            onSelected: (c) => setState(() => _customer = c),
           ),
-          if (_customer != null)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Udharo (Credit)'),
-              value: _isCredit,
-              onChanged: (v) => setState(() => _isCredit = v),
+          if (_customer != null) ...[
+            TextField(
+              controller: _paid,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Paid now',
+                hintText: formatNpr(_bill.total),
+                helperText: 'Blank = paid in full · 0 = all on udharo',
+              ),
+              onChanged: (_) => setState(() => _error = null),
             ),
-          if (_isCredit && _customer != null && _customer!.outstandingBalance + _bill.total > _customer!.creditLimit)
+            if (_isCredit) Text('On credit (udharo): ${formatNpr(_onCredit)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+          ],
+          if (_isCredit && _customer!.outstandingBalance + _onCredit > _customer!.creditLimit)
             Text(
-              'Over ${_customer!.name}\'s credit limit by ${formatNpr(_customer!.outstandingBalance + _bill.total - _customer!.creditLimit)}. You can still sell; the owner is told.',
+              'Over ${_customer!.name}\'s credit limit by ${formatNpr(_customer!.outstandingBalance + _onCredit - _customer!.creditLimit)}. You can still sell; the owner is told.',
               style: const TextStyle(color: Colors.orange),
             ),
+          if (_partPaid) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final m in PaymentMethod.values)
+                  ChoiceChip(label: Text(paymentMethodLabel(m)), selected: _method == m, onSelected: (_) => setState(() => _method = m)),
+              ],
+            ),
+            if (_method != PaymentMethod.cash)
+              TextField(controller: _reference, decoration: InputDecoration(labelText: _method == PaymentMethod.cheque ? 'Cheque number' : 'Transaction / reference id')),
+          ],
           if (!_isCredit)
             DropdownButtonFormField<String>(
               initialValue: _account,
@@ -119,10 +157,19 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
 
   Future<void> _submit() async {
     final problem = cartProblem(_lines, checkMinimum: true, allowBelowMinimum: _allowBelowMinimum, checkStock: true);
-    if (problem != null) {
-      setState(() => _error = problem);
+    final paidNow = _paidNow;
+    final paidProblem = paidNow == null || paidNow < 0
+        ? 'Enter the amount paid now.'
+        : paidNow > _bill.total + 0.005
+            ? 'Paid now can\'t be more than the bill (${formatNpr(_bill.total)}).'
+            : null;
+    if (problem != null || paidProblem != null) {
+      setState(() => _error = problem ?? paidProblem);
       return;
     }
+    final isCredit = _isCredit;
+    final partPaid = _partPaid;
+    final user = widget.auth.currentUser!;
     final items = [
       for (final l in _lines) SaleItem(product: l.product, qty: l.qtyValue, unitPrice: l.priceValue, unit: l.unit.label, size: l.unit.size),
     ];
@@ -132,13 +179,17 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
     try {
       sale = await widget.sales.sell(
         items: items,
-        isCredit: _isCredit,
+        isCredit: isCredit,
         customer: _customer,
-        userName: widget.auth.currentUser?.name ?? '',
-        userId: widget.auth.currentUser?.id,
+        userName: user.name,
+        userId: user.id,
         allowBelowMinimum: _allowBelowMinimum,
         account: _account,
+        paidNow: partPaid ? (amount: paidNow!, method: _method, reference: _reference.text, collector: user) : null,
       );
+    } on PaymentException catch (e) {
+      setState(() => _error = e.message);
+      return;
     } on BelowMinimumPriceException catch (e) {
       setState(() => _error = e.message);
       return;
@@ -161,14 +212,14 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         content: Text(
           '${_customer?.name ?? 'Walk-in customer'}\n'
           'Total: ${formatNpr(sale.total)}\n'
-          '${_isCredit ? 'Recorded as Udharo (Credit)' : 'Paid into ${accountName(_account)}'}'
+          '${partPaid ? 'Paid ${formatNpr(paidNow!)} · ${formatNpr(sale.total - paidNow)} on udharo' : isCredit ? 'Recorded as Udharo (Credit)' : 'Paid into ${accountName(_account)}'}'
           '${needsApproval ? '\n\nThis takes the customer over their credit limit. Recorded, and the owner is told.' : ''}',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context)
               ..pop()
-              ..pushReplacement(MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, seller: widget.sales.seller))),
+              ..pushReplacement(MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, sales: widget.sales, auth: widget.auth))),
             child: const Text('View bill'),
           ),
           TextButton(

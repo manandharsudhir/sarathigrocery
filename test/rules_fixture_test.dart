@@ -149,6 +149,15 @@ void main() {
     employee.sales.recordSale(items: [SaleItem(product: eGhee, qty: 1, unitPrice: 20000, unit: 'box', size: 4)], isCredit: false, userName: e.name, userId: e.id);
     owner.sales.recordSale(items: [SaleItem(product: ghee, qty: 1, unitPrice: 18000, unit: 'box', size: 4)], isCredit: false, userName: o.name, userId: o.id, allowBelowMinimum: true);
     await pumpEventQueue();
+    // Part paid at the counter (sale + payment against it, one batch), then
+    // the rest collected from the bill, and a delivered-order invoice collected.
+    final partPaid = await employee.sales.sell(items: [SaleItem(product: rice, qty: 3, unitPrice: rice.unitPrice)], isCredit: true, customer: eGurung,
+        userName: e.name, userId: e.id, paidNow: (amount: rice.unitPrice, method: PaymentMethod.wallet, reference: 'ESEWA-PART', collector: e));
+    await pumpEventQueue();
+    employee.sales.collect(partPaid, rice.unitPrice, method: PaymentMethod.cash, collector: e);
+    final invoiced = cashier.sales.sales.firstWhere((x) => x.orderId != null);
+    cashier.sales.collect(invoiced, 100, method: PaymentMethod.cash, collector: a);
+    await pumpEventQueue();
     owner.sales.cancelSale(owner.sales.sales.last, 'customer changed mind', userName: o.name);
     final supplier = cashier.suppliers.suppliers.first;
     cashier.purchasing.createPurchase(supplier: supplier, items: [PurchaseItem(product: cashier.inventory.products.first, qty: 5, unitCost: 2700)], paidAmount: 5000, userName: a.name);

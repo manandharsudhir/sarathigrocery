@@ -262,6 +262,25 @@ describe('delivery and payment verification', () => {
     await assertFails(setDoc(doc(db(DELIVERY), p('customerPayments/PM8')), payment({ collectedById: DELIVERY })), 'counter payments need recordPayments');
   });
 
+  test('a payment against a bill must be that customer\'s credit sale', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const d = ctx.firestore();
+      await setDoc(doc(d, p('sales/S2')), { status: 'completed', customerId: 'C1', total: 9000, isCredit: true });
+      await setDoc(doc(d, p('sales/S3')), { status: 'completed', customerId: 'C2', total: 9000, isCredit: true });
+      await setDoc(doc(d, p('sales/S4')), { status: 'completed', customerId: 'C1', total: 9000, isCredit: false });
+    });
+    const e = db(EMPLOYEE);
+    await assertSucceeds(setDoc(doc(e, p('customerPayments/PB1')), payment({ saleId: 'S2' })));
+    await assertFails(setDoc(doc(e, p('customerPayments/PB2')), payment({ saleId: 'S3' })), 'another customer\'s bill');
+    await assertFails(setDoc(doc(e, p('customerPayments/PB3')), payment({ saleId: 'S4' })), 'a paid sale is not a bill');
+    await assertFails(setDoc(doc(e, p('customerPayments/PB4')), payment({ saleId: 'NOPE' })), 'no such sale');
+    // Part paid at the counter: the bill and its payment in one batch.
+    const batch = writeBatch(e);
+    batch.set(doc(e, p('sales/S5')), { status: 'completed', customerId: 'C1', total: 9000, isCredit: true, createdByUserId: EMPLOYEE });
+    batch.set(doc(e, p('customerPayments/PB5')), payment({ saleId: 'S5' }));
+    await assertSucceeds(batch.commit());
+  });
+
   test('handover: only reconcileCash, never your own collection (except the owner)', async () => {
     const settle = (amount) => ({ settledAt: 10, settledAmount: amount, settledById: '', settledByName: 'x' });
     await assertFails(updateDoc(doc(db(DELIVERY), p('customerPayments/PM1')), { ...settle(7000), settledById: DELIVERY }));
