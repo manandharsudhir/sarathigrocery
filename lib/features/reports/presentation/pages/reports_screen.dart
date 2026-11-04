@@ -12,6 +12,7 @@ import 'package:sarathigrocery/features/inventory/presentation/controllers/inven
 import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale_status.dart';
 import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
+import 'package:sarathigrocery/features/sales/presentation/pages/invoice_screen.dart';
 import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
 import 'package:sarathigrocery/features/settings/domain/entities/business_settings.dart';
 import 'package:sarathigrocery/features/settings/presentation/controllers/settings_controller.dart';
@@ -173,14 +174,20 @@ class _SalesReportScreenState extends State<_SalesReportScreen> {
   }
 }
 
-class _SalesByProductScreen extends StatelessWidget {
+class _SalesByProductScreen extends StatefulWidget {
   const _SalesByProductScreen({required this.sales});
   final SalesController sales;
+  @override
+  State<_SalesByProductScreen> createState() => _SalesByProductScreenState();
+}
+
+class _SalesByProductScreenState extends State<_SalesByProductScreen> {
+  DateTimeRange? _range;
 
   @override
   Widget build(BuildContext context) {
     final Map<Product, (double, double)> byProduct = {};
-    for (final s in sales.sales.where((s) => s.status == SaleStatus.completed)) {
+    for (final s in widget.sales.sales.where((s) => s.status == SaleStatus.completed && (_range == null || _inRange(s.date, _range!)))) {
       for (final item in s.items) {
         final existing = byProduct[item.product] ?? (0.0, 0.0);
         byProduct[item.product] = (existing.$1 + item.baseQty, existing.$2 + item.lineTotal);
@@ -189,9 +196,66 @@ class _SalesByProductScreen extends StatelessWidget {
     final rows = byProduct.entries.toList()..sort((a, b) => b.value.$2.compareTo(a.value.$2));
     return Scaffold(
       appBar: AppBar(title: const Text('Sales by Product')),
+      body: Column(
+        children: [
+          _DateRangeBar(onChanged: (r) => setState(() => _range = r)),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: rows
+                  .map((e) => ListTile(
+                        title: Text(e.key.name),
+                        subtitle: Text('${e.key.describeQty(e.value.$1)} sold'),
+                        trailing: Text(formatNpr(e.value.$2)),
+                        onTap: _range == null
+                            ? null
+                            : () => Navigator.push(context, MaterialPageRoute(builder: (_) => _ProductSalesScreen(sales: widget.sales, product: e.key, range: _range!))),
+                      ))
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Every completed sale line of [product] in [range], newest first.
+class _ProductSalesScreen extends StatelessWidget {
+  const _ProductSalesScreen({required this.sales, required this.product, required this.range});
+  final SalesController sales;
+  final Product product;
+  final DateTimeRange range;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = [
+      for (final s in sales.sales.where((s) => s.status == SaleStatus.completed && _inRange(s.date, range)))
+        for (final item in s.items.where((i) => i.product == product)) (s, item),
+    ]..sort((a, b) => b.$1.date.compareTo(a.$1.date));
+    final qty = lines.fold(0.0, (sum, l) => sum + l.$2.baseQty);
+    final total = lines.fold(0.0, (sum, l) => sum + l.$2.lineTotal);
+    return Scaffold(
+      appBar: AppBar(title: Text('Sales of ${product.name}')),
       body: ListView(
         padding: const EdgeInsets.all(16),
-        children: rows.map((e) => ListTile(title: Text(e.key.name), subtitle: Text('${e.key.describeQty(e.value.$1)} sold'), trailing: Text(formatNpr(e.value.$2)))).toList(),
+        children: [
+          Text('${formatDate(range.start)} – ${formatDate(range.end)}', style: Theme.of(context).textTheme.bodySmall),
+          Text('${product.describeQty(qty)} · ${formatNpr(total)}', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          for (final (sale, item) in lines)
+            ListTile(
+              dense: true,
+              title: Text(sale.customer?.name ?? 'Walk-in customer'),
+              subtitle: Text([
+                formatDate(sale.date),
+                '${formatQty(item.qty)} ${item.unit}${item.size == 1 ? '' : ' (${formatQty(item.baseQty)} ${product.unitLabel})'}',
+                '${formatNpr(item.unitPrice)}/${item.unit}',
+              ].join(' · ')),
+              trailing: Text(formatNpr(item.lineTotal)),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, seller: sales.seller))),
+            ),
+        ],
       ),
     );
   }
