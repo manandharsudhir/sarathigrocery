@@ -56,8 +56,62 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
 Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? creditNote, double? paid}) {
   final tax = sale.invoiceNumber != null;
   final date = creditNote?.date ?? sale.date;
-  final now = DateTime.now();
   final c = billContent(sale, seller, creditNote: creditNote, paid: paid);
+  final customer = sale.customer;
+  return billLayoutPdf(
+    seller: seller,
+    title: c.title,
+    vat: tax,
+    left: [
+      ('Customer Name', customer?.name ?? 'Walk-in customer'),
+      if (customer != null && customer.location.isNotEmpty) ('Customer Address', customer.location),
+      if (sale.buyerPan.isNotEmpty) ('Customer ${tax ? 'VAT' : 'PAN'} No', sale.buyerPan),
+      ('Mode of payment', billPayment(sale, paid: paid)),
+    ],
+    right: [
+      ('Invoice Date', billDmy(date)),
+      ('Invoice Miti', billBsDmy(date)),
+      if (creditNote != null) ...[('Credit Note No', creditNote.number), ('Against Invoice', sale.invoiceNumber ?? sale.id)]
+      else ('Invoice No', sale.invoiceNumber ?? sale.id),
+    ],
+    items: [
+      for (final i in sale.items) (name: '${i.product.name}${tax && i.product.vatExempt ? ' (VAT exempt)' : ''}', qty: i.qty, unit: i.unit, rate: i.unitPrice, amount: i.lineTotal),
+    ],
+    totals: [
+      for (final (k, v) in c.totals)
+        switch (k) {
+          'Total' => ('Total Amount', billMoney(sale.total)),
+          'VAT' => ('${formatQty(seller.taxPercent)} % VAT', billMoney(sale.vatAmount)),
+          'Exempt sales' => (k, billMoney(sale.exemptAmount)),
+          'Taxable amount' => (k, billMoney(sale.taxableAmount)),
+          'Paid' => (k, billMoney(paid ?? 0)),
+          'Balance due' => (k, billMoney(sale.total - (paid ?? 0))),
+          _ => (k, v),
+        },
+    ],
+    total: sale.total,
+    remarks: creditNote?.reason ?? '',
+    preparedBy: sale.createdByName,
+  );
+}
+
+/// The printed bill's page, shared by bills and order slips: shop header
+/// with [title], [left]/[right] info blocks, item table, amount in words,
+/// [totals] (already formatted; "Total Amount" in bold), remarks and
+/// signature lines. [vat] picks the "VAT No." vs "PAN No." label.
+Future<Uint8List> billLayoutPdf({
+  required BusinessSettings seller,
+  required String title,
+  required bool vat,
+  required List<(String, String)> left,
+  required List<(String, String)> right,
+  required List<({String name, double qty, String unit, double rate, double amount})> items,
+  required List<(String, String)> totals,
+  required double total,
+  String remarks = '',
+  String preparedBy = '',
+}) {
+  final now = DateTime.now();
   const small = pw.TextStyle(fontSize: 9);
   final bold = pw.TextStyle(fontWeight: pw.FontWeight.bold);
 
@@ -76,38 +130,11 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
         ],
       );
 
-  final customer = sale.customer;
-  final left = [
-    ('Customer Name', customer?.name ?? 'Walk-in customer'),
-    if (customer != null && customer.location.isNotEmpty) ('Customer Address', customer.location),
-    if (sale.buyerPan.isNotEmpty) ('Customer ${tax ? 'VAT' : 'PAN'} No', sale.buyerPan),
-    ('Mode of payment', billPayment(sale, paid: paid)),
-  ];
-  final right = [
-    ('Invoice Date', _dmy(date)),
-    ('Invoice Miti', _bsDmy(date)),
-    if (creditNote != null) ...[('Credit Note No', creditNote.number), ('Against Invoice', sale.invoiceNumber ?? sale.id)]
-    else ('Invoice No', sale.invoiceNumber ?? sale.id),
-  ];
-
   final cell = const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3);
   pw.Widget td(String text, {pw.TextAlign align = pw.TextAlign.left, pw.TextStyle? style}) =>
       pw.Padding(padding: cell, child: pw.Text(text, textAlign: align, style: style));
   const r = pw.TextAlign.right;
   const ctr = pw.TextAlign.center;
-
-  final totals = [
-    for (final (k, v) in c.totals)
-      switch (k) {
-        'Total' => ('Total Amount', _money(sale.total)),
-        'VAT' => ('${formatQty(seller.taxPercent)} % VAT', _money(sale.vatAmount)),
-        'Exempt sales' => (k, _money(sale.exemptAmount)),
-        'Taxable amount' => (k, _money(sale.taxableAmount)),
-        'Paid' => (k, _money(paid ?? 0)),
-        'Balance due' => (k, _money(sale.total - (paid ?? 0))),
-        _ => (k, v),
-      },
-  ];
 
   final doc = pw.Document();
   doc.addPage(pw.Page(
@@ -122,9 +149,9 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
         pw.Stack(alignment: pw.Alignment.center, children: [
           pw.Align(
             alignment: pw.Alignment.centerLeft,
-            child: seller.panNumber.isEmpty ? pw.SizedBox() : pw.Text('${tax ? 'VAT' : 'PAN'} No.  ${seller.panNumber}', style: bold),
+            child: seller.panNumber.isEmpty ? pw.SizedBox() : pw.Text('${vat ? 'VAT' : 'PAN'} No.  ${seller.panNumber}', style: bold),
           ),
-          pw.Text(c.title.toUpperCase(), style: bold),
+          pw.Text(title.toUpperCase(), style: bold),
         ]),
         pw.Divider(height: 8, thickness: 1),
         pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
@@ -152,14 +179,14 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
               td('Rate', align: ctr, style: bold),
               td('Amount', align: ctr, style: bold),
             ]),
-            for (final (n, i) in sale.items.indexed)
+            for (final (n, i) in items.indexed)
               pw.TableRow(children: [
                 td('${n + 1}', align: ctr),
-                td('${i.product.name}${tax && i.product.vatExempt ? ' (VAT exempt)' : ''}'),
+                td(i.name),
                 td(formatQty(i.qty), align: r),
                 td(i.unit),
-                td(_money(i.unitPrice), align: r),
-                td(_money(i.lineTotal), align: r),
+                td(billMoney(i.rate), align: r),
+                td(billMoney(i.amount), align: r),
               ]),
           ],
         ),
@@ -171,7 +198,7 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
                 padding: const pw.EdgeInsets.all(6),
                 child: pw.RichText(text: pw.TextSpan(children: [
                   pw.TextSpan(text: 'Amount In Words : ', style: bold),
-                  pw.TextSpan(text: amountInWords(sale.total)),
+                  pw.TextSpan(text: amountInWords(total)),
                 ])),
               ),
             ),
@@ -190,13 +217,13 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
         pw.Container(
           padding: const pw.EdgeInsets.all(6),
           decoration: const pw.BoxDecoration(border: pw.Border(left: pw.BorderSide(width: 0.8), right: pw.BorderSide(width: 0.8), bottom: pw.BorderSide(width: 0.8))),
-          child: pw.Text('Remarks : ${creditNote?.reason ?? ''}'),
+          child: pw.Text('Remarks : $remarks'),
         ),
         pw.SizedBox(height: 10),
-        pw.Text('Printed Date: ${_dmy(now)}, Time: ${_time(now)}', style: small),
+        pw.Text('Printed Date: ${billDmy(now)}, Time: ${_time(now)}', style: small),
         pw.SizedBox(height: 40),
         pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-          _signature(sale.createdByName, 'Prepared By'),
+          _signature(preparedBy, 'Prepared By'),
           _signature('', 'Received By'),
           _signature('', 'Authorized signature\nFor: ${seller.businessName}'),
         ]),
@@ -224,9 +251,10 @@ String billPayment(Sale sale, {double? paid}) {
 }
 
 String _two(int n) => n.toString().padLeft(2, '0');
-String _dmy(DateTime d) => '${_two(d.day)}/${_two(d.month)}/${d.year}';
+/// dd/mm/yyyy dates on printed bills: AD, and BS ([billBsDmy]).
+String billDmy(DateTime d) => '${_two(d.day)}/${_two(d.month)}/${d.year}';
 String _time(DateTime d) => '${d.hour % 12 == 0 ? 12 : d.hour % 12}:${_two(d.minute)}:${_two(d.second)} ${d.hour < 12 ? 'am' : 'pm'}';
-String _bsDmy(DateTime d) {
+String billBsDmy(DateTime d) {
   try {
     final b = BsDate.fromAd(d);
     return '${_two(b.day)}/${_two(b.month)}/${b.year}';
@@ -236,7 +264,7 @@ String _bsDmy(DateTime d) {
 }
 
 /// 1,38,053.30: Nepali grouping with paisa, no currency label.
-String _money(double amount) {
+String billMoney(double amount) {
   final paisa = (amount * 100).round();
   final rupees = formatNpr((paisa ~/ 100).toDouble()).substring(currencyLabel.length + 1);
   return '$rupees.${_two(paisa % 100)}';

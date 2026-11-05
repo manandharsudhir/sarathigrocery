@@ -65,6 +65,11 @@ class SalesController extends ChangeNotifier {
   VatTerms? get vatTerms => _vat();
 
   CreditNote? creditNoteFor(Sale sale) => _repository.creditNotes.where((n) => n.sale.id == sale.id).firstOrNull;
+
+  /// The bill raised when order [orderId] was delivered, if this device has
+  /// it (delivery staff don't load sales: only the ones they raised this
+  /// session are here).
+  Sale? invoiceForOrder(String orderId) => _repository.sales.where((s) => s.orderId == orderId).firstOrNull;
   final BillNumbers? _numbers;
   final Future<void> Function({bool requireOnline})? _commit;
 

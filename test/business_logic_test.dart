@@ -29,6 +29,7 @@ import 'package:sarathigrocery/features/inventory/domain/entities/unit_setup.dar
 import 'package:sarathigrocery/features/ordering/domain/entities/order_item.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/delivery_type.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
+import 'package:sarathigrocery/features/ordering/presentation/pdf/order_slip_pdf.dart';
 import 'package:sarathigrocery/features/purchasing/domain/entities/purchase_item.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale_item.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale_status.dart';
@@ -732,6 +733,41 @@ void main() {
       expect(invoice.invoiceNumber, endsWith('-0001'));
       expect(invoice.vatAmount, 130);
       expect(invoice.buyerPan, shop.pan);
+    });
+
+    test('an order shares a slip until delivered, then its bill (delivery staff: this session only)', () async {
+      final business = await TestBusiness.create(safeguards: false);
+      final owner = await business.device(UserRole.owner);
+      owner.settings.setVat(registered: true, pan: '601234567', rate: 13, pricesIncludeVat: true);
+      final shop = owner.customers.customers.first;
+      final ghee = owner.inventory.createProduct(name: 'Ghee', category: 'Oil', unitPrice: 1130, purchasePrice: 900, stockQty: 5, reorderLevel: 1);
+      final order = owner.ordering.placeOrderFor(shop, atMinimum({ghee: 1}), deliveryType: DeliveryType.delivery, address: 'Patan', notes: 'slow payer, call first', staff: owner.auth.currentUser!)!;
+
+      final slip = orderSlipContent(order, owner.sales.seller);
+      expect(slip.title, 'Order');
+      expect(slip.note, 'Not a tax invoice. Tax invoice is issued on delivery.');
+      expect(slip.head, containsAll([('Order no.', order.id), ('Customer address', 'Patan'), ('Payment', 'Due on delivery')]));
+      expect(slip.head.any((r) => r.$2.contains('slow payer') || r.$2 == owner.auth.currentUser!.name), isFalse, reason: 'notes and staff names are internal');
+      expect(slip.totals, containsAll([('VAT', formatNpr(130)), ('Total', formatNpr(1130))]));
+      expect(orderSlipFileName(order), allOf(startsWith('${shop.name} '), endsWith(' Order ${order.id}.pdf')));
+      expect((await orderSlipPdf(order, owner.sales.seller)).isNotEmpty, isTrue);
+      expect(owner.sales.invoiceForOrder(order.id), isNull);
+
+      owner.ordering.assign(order, owner.ordering.deliverers.firstWhere((u) => u.role == UserRole.delivery), by: owner.auth.currentUser!);
+      await pumpEventQueue();
+      final delivery = await business.device(UserRole.delivery);
+      final dOrder = delivery.ordering.orders.single;
+      await delivery.ordering.deliverAndCollect(dOrder, amount: 0, method: PaymentMethod.cash, collector: delivery.auth.currentUser!);
+      await pumpEventQueue();
+      expect(delivery.sales.invoiceForOrder(order.id)?.invoiceNumber, endsWith('-0001'), reason: 'the bill it just raised');
+      expect(owner.sales.invoiceForOrder(order.id)?.invoiceNumber, endsWith('-0001'));
+
+      final later = await business.device(UserRole.delivery);
+      final lOrder = later.ordering.orders.single;
+      expect(later.sales.invoiceForOrder(order.id), isNull, reason: 'delivery staff do not load sales');
+      final fallback = orderSlipContent(lOrder, later.sales.seller, paid: later.ordering.paidFor(lOrder));
+      expect(fallback.title, 'Order (Delivered)');
+      expect(fallback.head, contains(('Payment', 'Credit')));
     });
   });
 

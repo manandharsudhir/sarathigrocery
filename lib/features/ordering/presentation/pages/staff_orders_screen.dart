@@ -9,13 +9,15 @@ import 'package:sarathigrocery/features/auth/presentation/controllers/auth_contr
 import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
 import 'package:sarathigrocery/features/ordering/presentation/pages/order_detail_screen.dart';
+import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
 import 'package:sarathigrocery/features/ordering/presentation/pages/staff_new_order_screen.dart';
 
 class StaffOrdersScreen extends StatefulWidget {
-  const StaffOrdersScreen({super.key, required this.controller, required this.auth, this.customers, this.inventory});
+  const StaffOrdersScreen({super.key, required this.controller, required this.auth, required this.sales, this.customers, this.inventory});
 
   final OrderingController controller;
   final AuthController auth;
+  final SalesController sales;
 
   /// Given where staff may take orders for customers (the "New Order" button).
   final CustomersController? customers;
@@ -42,7 +44,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
         void newOrder() => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => StaffNewOrderScreen(ordering: widget.controller, customers: widget.customers!, inventory: widget.inventory!, auth: widget.auth),
+                builder: (_) => StaffNewOrderScreen(ordering: widget.controller, customers: widget.customers!, inventory: widget.inventory!, auth: widget.auth, sales: widget.sales),
               ),
             );
 
@@ -107,6 +109,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                                   order: order,
                                   controller: widget.controller,
                                   auth: widget.auth,
+                                  sales: widget.sales,
                                   staffView: true,
                                 ),
                               ),

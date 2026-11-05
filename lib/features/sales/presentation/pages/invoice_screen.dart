@@ -79,16 +79,24 @@ class InvoiceScreen extends StatelessWidget {
 /// "Ram Stores 2082-07-17 Cash 2082-83-15.pdf": customer, BS date, how it was
 /// paid, then the bill number so same-day bills don't clash.
 String billFileName(Sale sale, CreditNote? creditNote) {
-  final date = creditNote?.date ?? sale.date;
-  String day;
-  try {
-    day = BsDate.fromAd(date).toString();
-  } on RangeError {
-    day = date.toIso8601String().substring(0, 10); // outside the BS table
-  }
+  final day = fileDay(creditNote?.date ?? sale.date);
   final payment = creditNote != null ? 'Credit note' : sale.isCredit ? 'Credit' : accountName(sale.account);
   final number = creditNote?.number ?? sale.invoiceNumber ?? sale.id;
   final customer = sale.customer?.name.trim() ?? '';
-  final name = [customer.isEmpty ? 'Walk-in' : customer, day, payment, number].where((s) => s.isNotEmpty).join(' ');
+  return pdfFileName([customer.isEmpty ? 'Walk-in' : customer, day, payment, number]);
+}
+
+/// BS date for file names ("2082-07-17"; AD outside the BS table).
+String fileDay(DateTime date) {
+  try {
+    return BsDate.fromAd(date).toString();
+  } on RangeError {
+    return date.toIso8601String().substring(0, 10);
+  }
+}
+
+/// Non-empty [parts] joined by spaces, made safe as a file name, + ".pdf".
+String pdfFileName(List<String> parts) {
+  final name = parts.where((s) => s.isNotEmpty).join(' ');
   return '${name.replaceAll(RegExp(r'[/\\:*?"<>|]'), '-')}.pdf';
 }

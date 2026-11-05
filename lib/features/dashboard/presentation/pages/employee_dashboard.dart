@@ -163,7 +163,7 @@ class EmployeeDashboard extends StatelessWidget {
           SliverList.list(
             children: queue
                 .take(3)
-                .map((order) => _OrderQueueCard(order: order, ordering: ordering, auth: auth))
+                .map((order) => _OrderQueueCard(order: order, ordering: ordering, auth: auth, sales: sales))
                 .toList(),
           ),
 
@@ -339,11 +339,12 @@ class _TodayStrip extends StatelessWidget {
 /// One waiting order with its single next step as a button — the whole point
 /// is that preparing an order never needs a detail screen.
 class _OrderQueueCard extends StatelessWidget {
-  const _OrderQueueCard({required this.order, required this.ordering, required this.auth});
+  const _OrderQueueCard({required this.order, required this.ordering, required this.auth, required this.sales});
 
   final CustomerOrder order;
   final OrderingController ordering;
   final AuthController auth;
+  final SalesController sales;
 
   @override
   Widget build(BuildContext context) {
@@ -381,14 +382,14 @@ class _OrderQueueCard extends StatelessWidget {
                 children: [
                   if (next != null)
                     Expanded(
-                      child: NextOrderButton(order: order, ordering: ordering, auth: auth),
+                      child: NextOrderButton(order: order, ordering: ordering, auth: auth, sales: sales),
                     ),
                   if (next != null) const SizedBox(width: 8),
                   OutlinedButton(
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => OrderDetailScreen(order: order, controller: ordering, auth: auth, staffView: true),
+                        builder: (_) => OrderDetailScreen(order: order, controller: ordering, auth: auth, sales: sales, staffView: true),
                       ),
                     ),
                     child: const Text('Details'),

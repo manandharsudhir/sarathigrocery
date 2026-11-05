@@ -10,11 +10,19 @@ import 'package:sarathigrocery/features/customers/presentation/widgets/payment_w
 import 'package:sarathigrocery/features/ordering/domain/entities/customer_order.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/delivery_type.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
+import 'package:sarathigrocery/features/customers/presentation/pdf/payment_documents.dart';
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
+import 'package:sarathigrocery/features/ordering/presentation/pdf/order_slip_pdf.dart';
+import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
+import 'package:sarathigrocery/features/sales/presentation/pages/invoice_screen.dart';
+import 'package:sarathigrocery/features/sales/presentation/pdf/invoice_pdf.dart';
 
-/// Marks [order] delivered and records what the customer paid at the door.
-void showDeliverSheet(BuildContext context, CustomerOrder order, OrderingController ordering, AuthController auth) {
-  showModalBottomSheet(
+/// Marks [order] delivered and records what the customer paid at the door,
+/// then offers its bill (like after a sale).
+Future<void> showDeliverSheet(BuildContext context, CustomerOrder order, OrderingController ordering, AuthController auth, SalesController sales) async {
+  // The tile that opened this may be gone once the order is delivered.
+  final navigator = Navigator.of(context);
+  await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     builder: (_) => CollectPaymentForm(
@@ -36,16 +44,45 @@ void showDeliverSheet(BuildContext context, CustomerOrder order, OrderingControl
       },
     ),
   );
+  final sale = order.status == OrderStatus.delivered ? sales.invoiceForOrder(order.id) : null;
+  if (sale == null || !navigator.mounted) return;
+  showDialog(
+    context: navigator.context,
+    builder: (context) => AlertDialog(
+      title: Text(sale.invoiceNumber == null ? 'Delivered' : 'Delivered · Tax invoice ${sale.invoiceNumber}'),
+      content: Text('${order.customer.name}\nTotal: ${formatNpr(sale.total)}'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context)
+            ..pop()
+            ..push(MaterialPageRoute(builder: (_) => InvoiceScreen(sale: sale, sales: sales, auth: auth))),
+          child: const Text('View bill'),
+        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+      ],
+    ),
+  );
+}
+
+/// Shares the order's bill once delivered (if this device has it), else
+/// the order slip.
+Future<void> shareOrder(CustomerOrder order, OrderingController ordering, SalesController sales) async {
+  final sale = order.status == OrderStatus.delivered ? sales.invoiceForOrder(order.id) : null;
+  if (sale != null) return sharePdf(await billPdf(sale, sales.seller, paid: sales.paidOn(sale)), billFileName(sale, null));
+  return sharePdf(await orderSlipPdf(order, sales.seller, paid: ordering.paidFor(order)), orderSlipFileName(order));
 }
 
 enum _Viewer { staff, deliverer, readOnly }
 
 class OrderDetailScreen extends StatelessWidget {
-  const OrderDetailScreen({super.key, required this.order, required this.controller, required this.auth, this.staffView = false});
+  const OrderDetailScreen({super.key, required this.order, required this.controller, required this.auth, required this.sales, this.staffView = false});
 
   final CustomerOrder order;
   final OrderingController controller;
   final AuthController auth;
+
+  /// The order's bill, once delivered, and the shop as printed on slips.
+  final SalesController sales;
 
   /// Owner/employee view (manage the order). Delivery staff get their own
   /// view automatically.
@@ -61,14 +98,25 @@ class OrderDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: Listenable.merge([controller, sales]),
       builder: (context, _) {
         final viewer = _viewer;
+        final invoice = order.status == OrderStatus.delivered ? sales.invoiceForOrder(order.id) : null;
         final open = order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled;
         final payments = controller.paymentsFor(order);
 
         return Scaffold(
-          appBar: AppBar(title: Text('Order ${order.id}')),
+          appBar: AppBar(
+            title: Text('Order ${order.id}'),
+            actions: [
+              if (order.status != OrderStatus.cancelled)
+                IconButton(
+                  tooltip: invoice != null ? 'Share bill' : 'Share order',
+                  icon: const Icon(Icons.share),
+                  onPressed: () => shareOrder(order, controller, sales),
+                ),
+            ],
+          ),
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -106,6 +154,15 @@ class OrderDetailScreen extends StatelessWidget {
                 Text('Received by ${order.receivedBy}', style: Theme.of(context).textTheme.titleSmall),
                 SignatureView(signature: signature),
               ],
+              if (invoice != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.receipt_long_outlined),
+                    label: Text(invoice.invoiceNumber == null ? 'View bill' : 'View tax invoice ${invoice.invoiceNumber}'),
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(sale: invoice, sales: sales, auth: auth))),
+                  ),
+                ),
               if (order.placedByStaffName.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text('Order taken by ${order.placedByStaffName}')),
               if (payments.isNotEmpty) ...[
                 const SizedBox(height: 24),
@@ -113,8 +170,8 @@ class OrderDetailScreen extends StatelessWidget {
                 for (final p in payments) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: PaymentReceipt(payment: p, businessName: controller.businessName)),
               ],
               const SizedBox(height: 24),
-              if (viewer == _Viewer.staff && open) _StaffActions(order: order, controller: controller, auth: auth),
-              if (viewer == _Viewer.deliverer && open) _DelivererActions(order: order, controller: controller, auth: auth),
+              if (viewer == _Viewer.staff && open) _StaffActions(order: order, controller: controller, auth: auth, sales: sales),
+              if (viewer == _Viewer.deliverer && open) _DelivererActions(order: order, controller: controller, auth: auth, sales: sales),
             ],
           ),
         );
@@ -151,11 +208,12 @@ class _StatusTimeline extends StatelessWidget {
 }
 
 class _StaffActions extends StatelessWidget {
-  const _StaffActions({required this.order, required this.controller, required this.auth});
+  const _StaffActions({required this.order, required this.controller, required this.auth, required this.sales});
 
   final CustomerOrder order;
   final OrderingController controller;
   final AuthController auth;
+  final SalesController sales;
 
   @override
   Widget build(BuildContext context) {
@@ -180,7 +238,7 @@ class _StaffActions extends StatelessWidget {
           children: [
             if (nextStatus != null)
               Expanded(
-                child: NextOrderButton(order: order, ordering: controller, auth: auth),
+                child: NextOrderButton(order: order, ordering: controller, auth: auth, sales: sales),
               ),
             if (nextStatus != null) const SizedBox(width: 12),
             Expanded(
@@ -198,11 +256,12 @@ class _StaffActions extends StatelessWidget {
 
 /// Delivery staff: take it out, then deliver & collect. Nothing else.
 class _DelivererActions extends StatelessWidget {
-  const _DelivererActions({required this.order, required this.controller, required this.auth});
+  const _DelivererActions({required this.order, required this.controller, required this.auth, required this.sales});
 
   final CustomerOrder order;
   final OrderingController controller;
   final AuthController auth;
+  final SalesController sales;
 
   @override
   Widget build(BuildContext context) {
@@ -210,7 +269,7 @@ class _DelivererActions extends StatelessWidget {
     if (order.status == OrderStatus.outForDelivery) {
       return FilledButton.icon(
         icon: const Icon(Icons.handshake_outlined),
-        onPressed: () => showDeliverSheet(context, order, controller, auth),
+        onPressed: () => showDeliverSheet(context, order, controller, auth, sales),
         label: const Text('Deliver & Collect'),
       );
     }
@@ -236,18 +295,19 @@ String orderPaymentSummary(CustomerOrder order, List<CustomerPayment> payments) 
 /// The one primary button that moves an order to its next status.
 /// The delivered step opens Deliver & Collect instead of advancing directly.
 class NextOrderButton extends StatelessWidget {
-  const NextOrderButton({super.key, required this.order, required this.ordering, required this.auth});
+  const NextOrderButton({super.key, required this.order, required this.ordering, required this.auth, required this.sales});
 
   final CustomerOrder order;
   final OrderingController ordering;
   final AuthController auth;
+  final SalesController sales;
 
   @override
   Widget build(BuildContext context) {
     final next = nextOrderStatus(order.status)!;
     return FilledButton(
       onPressed: () => next == OrderStatus.delivered
-          ? showDeliverSheet(context, order, ordering, auth)
+          ? showDeliverSheet(context, order, ordering, auth, sales)
           : ordering.advanceOrderStatus(order, next, userName: auth.currentUser?.name ?? '', userId: auth.currentUser?.id),
       child: Text(next == OrderStatus.delivered ? 'Deliver & Collect' : 'Next: ${orderStatusLabel(next)}'),
     );

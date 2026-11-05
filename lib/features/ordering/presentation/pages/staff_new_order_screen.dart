@@ -13,6 +13,8 @@ import 'package:sarathigrocery/features/inventory/presentation/controllers/inven
 import 'package:sarathigrocery/features/ordering/domain/entities/delivery_type.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/order_item.dart';
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
+import 'package:sarathigrocery/features/ordering/presentation/pages/order_detail_screen.dart';
+import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/vat.dart';
 import 'package:sarathigrocery/features/sales/presentation/widgets/cart_editor.dart';
 
@@ -20,12 +22,13 @@ import 'package:sarathigrocery/features/sales/presentation/widgets/cart_editor.d
 /// WhatsApp message and may not have the app. It then follows the normal
 /// order → delivery → Deliver & Collect flow.
 class StaffNewOrderScreen extends StatefulWidget {
-  const StaffNewOrderScreen({super.key, required this.ordering, required this.customers, required this.inventory, required this.auth});
+  const StaffNewOrderScreen({super.key, required this.ordering, required this.customers, required this.inventory, required this.auth, required this.sales});
 
   final OrderingController ordering;
   final CustomersController customers;
   final InventoryController inventory;
   final AuthController auth;
+  final SalesController sales;
 
   @override
   State<StaffNewOrderScreen> createState() => _StaffNewOrderScreenState();
@@ -60,11 +63,29 @@ class _StaffNewOrderScreenState extends State<StaffNewOrderScreen> {
       final order = widget.ordering.placeOrderFor(customer, items,
           deliveryType: _deliveryType, address: _address.text.trim(), notes: _notes.text.trim(), staff: widget.auth.currentUser!);
       if (order == null) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Order ${order.id} placed for ${customer.name} (${formatNpr(order.total)})'
-            ''),
-      ));
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Order placed'),
+          content: Text('${customer.name}\nOrder ${order.id}\nTotal: ${formatNpr(order.total)}'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context)
+                ..pop()
+                ..pushReplacement(MaterialPageRoute(
+                    builder: (_) => OrderDetailScreen(order: order, controller: widget.ordering, auth: widget.auth, sales: widget.sales, staffView: true))),
+              child: const Text('View order'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pop(context);
+              },
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
     } on PaymentException catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } on BelowMinimumPriceException catch (e) {

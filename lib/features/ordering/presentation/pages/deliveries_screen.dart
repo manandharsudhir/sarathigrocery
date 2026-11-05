@@ -6,13 +6,15 @@ import 'package:sarathigrocery/features/ordering/domain/entities/customer_order.
 import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
 import 'package:sarathigrocery/features/ordering/presentation/pages/order_detail_screen.dart';
+import 'package:sarathigrocery/features/sales/presentation/controllers/sales_controller.dart';
 
 /// Delivery staff home: orders assigned to me, each with its next step.
 class DeliveriesScreen extends StatelessWidget {
-  const DeliveriesScreen({super.key, required this.ordering, required this.auth});
+  const DeliveriesScreen({super.key, required this.ordering, required this.auth, required this.sales});
 
   final OrderingController ordering;
   final AuthController auth;
+  final SalesController sales;
 
   @override
   Widget build(BuildContext context) {
@@ -39,14 +41,14 @@ class DeliveriesScreen extends StatelessWidget {
               ].join('\n')),
               isThreeLine: true,
               trailing: isOpen && order.status == OrderStatus.outForDelivery
-                  ? FilledButton(onPressed: () => showDeliverSheet(context, order, ordering, auth), child: const Text('Deliver'))
+                  ? FilledButton(onPressed: () => showDeliverSheet(context, order, ordering, auth, sales), child: const Text('Deliver'))
                   : isOpen && order.status == OrderStatus.ready
                       ? FilledButton.tonal(
                           onPressed: () => ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: user.name, userId: user.id),
                           child: const Text('Start'),
                         )
                       : null,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OrderDetailScreen(order: order, controller: ordering, auth: auth))),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OrderDetailScreen(order: order, controller: ordering, auth: auth, sales: sales))),
             ),
           );
         }
