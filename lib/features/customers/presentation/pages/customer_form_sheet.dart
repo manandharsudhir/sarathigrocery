@@ -5,9 +5,9 @@ import 'package:sarathigrocery/features/auth/presentation/controllers/auth_contr
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 
-/// Add ([existing] null) or edit a customer. Balance is never edited here —
+/// Add ([existing] null; returns the new customer) or edit a customer. Balance is never edited here —
 /// it only moves through sales, returns and payments.
-void showCustomerFormSheet(
+Future<Customer?> showCustomerFormSheet(
   BuildContext context,
   CustomersController controller,
   AuthController auth, {
@@ -25,7 +25,7 @@ void showCustomerFormSheet(
   final setsTerms = auth.can(Permission.manageCustomers);
   String? error;
 
-  showModalBottomSheet(
+  return showModalBottomSheet<Customer>(
     context: context,
     isScrollControlled: true,
     builder: (context) => StatefulBuilder(
@@ -124,8 +124,9 @@ void showCustomerFormSheet(
                     return;
                   }
                   final userName = auth.currentUser?.name ?? '';
+                  Customer? created;
                   if (existing == null) {
-                    controller.createCustomer(
+                    created = controller.createCustomer(
                       name: name.text.trim(),
                       phone: phone.text.trim(),
                       location: location.text.trim(),
@@ -145,7 +146,7 @@ void showCustomerFormSheet(
                       userName: userName,
                     );
                   }
-                  Navigator.pop(context);
+                  Navigator.pop(context, created);
                 },
                 child: Text(existing == null ? 'Add Customer' : 'Save'),
               ),

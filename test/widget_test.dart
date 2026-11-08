@@ -9,6 +9,10 @@ import 'package:sarathigrocery/features/accounting/presentation/pages/vat_books_
 import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/cash/presentation/pages/cash_screen.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale_item.dart';
+import 'package:sarathigrocery/features/customers/presentation/pages/customers_screen.dart';
+import 'package:sarathigrocery/features/sales/presentation/pages/new_sale_screen.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product_unit.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/unit_setup.dart';
 import 'package:sarathigrocery/features/inventory/presentation/pages/product_form_screen.dart';
@@ -149,5 +153,116 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'Opening stock (kg)'), '20');
     await tester.pumpAndSettle();
     expect(costField(), findsOneWidget);
+  });
+
+  testWidgets('New Sale: tap products, step quantities, charge; walk-in cash in two taps, customer on udharo', (WidgetTester tester) async {
+    final accounts = InMemoryAuthRepository();
+    final owner = AppScope(store: InMemoryRemoteStore(), authRepository: accounts);
+    late final Product rice;
+    late final Customer shop;
+    await tester.runAsync(() async {
+      await signUp(owner, accounts, phone: '9800000001', password: 'password123');
+      rice = owner.inventory.createProduct(name: 'Rice', category: 'General', unitPrice: 100, purchasePrice: 80, stockQty: 50, reorderLevel: 1);
+      shop = owner.customers.createCustomer(name: 'Ram Stores', phone: '9811111111', location: 'Patan', creditLimit: 10000, by: owner.auth.currentUser!);
+      await pumpEventQueue();
+    });
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+    Future<void> open() async {
+      await tester.pumpWidget(MaterialApp(home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => NewSaleScreen(sales: owner.sales, inventory: owner.inventory, customers: owner.customers, auth: owner.auth))),
+            child: const Text('go'),
+          ),
+        ),
+      )));
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+    }
+
+    // Walk-in: no sales yet, so the catalogue is listed; tap twice = 2.
+    await open();
+    expect(find.text('Walk-in customer'), findsOneWidget);
+    await tester.tap(find.text('Rice'));
+    await tester.pump();
+    await tester.tap(find.byTooltip('One more'));
+    await tester.pump();
+    expect(find.text('NPR 200'), findsWidgets);
+    await tester.tap(find.byTooltip('One more'));
+    await tester.pump();
+    await tester.tap(find.text('Charge'));
+    await tester.pumpAndSettle();
+    expect(find.text('Udharo'), findsNothing, reason: 'walk-ins pay in full');
+    await tester.tap(find.text('Complete sale'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sale Complete'), findsOneWidget);
+    expect(owner.sales.sales.single.items.single.qty, 3);
+    expect(owner.sales.sales.single.isCredit, isFalse);
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    // Customer: picked from search; their usual items come first; udharo.
+    await open();
+    await tester.tap(find.text('Walk-in customer'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'ram');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ram Stores'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Owes NPR 0'), findsOneWidget);
+    await tester.tap(find.text('Rice'));
+    await tester.pump();
+    await tester.tap(find.text('Charge'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Udharo'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Complete sale'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sale Complete'), findsOneWidget);
+    final sale = owner.sales.sales.last;
+    expect(sale.isCredit, isTrue);
+    expect(sale.customer, shop);
+    expect(shop.outstandingBalance, 100);
+    expect(rice.stockQty, 46);
+  });
+
+  testWidgets('Customers: search, filter chips and sort', (WidgetTester tester) async {
+    final accounts = InMemoryAuthRepository();
+    final owner = AppScope(store: InMemoryRemoteStore(), authRepository: accounts);
+    await tester.runAsync(() async {
+      await signUp(owner, accounts, phone: '9800000001', password: 'password123');
+      final me = owner.auth.currentUser!;
+      owner.customers.createCustomer(name: 'Asha Kirana', phone: '9811111111', location: 'Patan', creditLimit: 1000, openingBalance: 5000, by: me);
+      owner.customers.createCustomer(name: 'Binod Pasal', phone: '9822222222', location: 'Bhaktapur', creditLimit: 10000, openingBalance: 300, by: me);
+      owner.customers.createCustomer(name: 'Chhiring Store', phone: '9833333333', location: 'Patan', creditLimit: 10000, by: me);
+      await pumpEventQueue();
+    });
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(MaterialApp(home: CustomersScreen(controller: owner.customers, auth: owner.auth)));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.textContaining('Over limit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Over limit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Asha Kirana'), findsOneWidget);
+    expect(find.text('Binod Pasal'), findsNothing);
+
+    await tester.ensureVisible(find.textContaining('Paid up'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('Paid up'));
+    await tester.pumpAndSettle();
+    expect(find.text('Chhiring Store'), findsOneWidget);
+    expect(find.text('Asha Kirana'), findsNothing);
+
+    await tester.ensureVisible(find.textContaining('All ('));
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('All ('));
+    await tester.enterText(find.byType(TextField), 'bhakta');
+    await tester.pumpAndSettle();
+    expect(find.text('Binod Pasal'), findsOneWidget);
+    expect(find.text('Chhiring Store'), findsNothing);
   });
 }

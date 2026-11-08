@@ -24,11 +24,14 @@ import 'package:sarathigrocery/features/customers/presentation/pages/customer_fo
 }
 
 class CustomerDetailScreen extends StatelessWidget {
-  const CustomerDetailScreen({super.key, required this.customer, required this.controller, required this.auth});
+  const CustomerDetailScreen({super.key, required this.customer, required this.controller, required this.auth, this.newSale});
 
   final Customer customer;
   final CustomersController controller;
   final AuthController auth;
+
+  /// Opens New Sale with this customer picked.
+  final void Function(BuildContext context, Customer customer)? newSale;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +76,14 @@ class CustomerDetailScreen extends StatelessWidget {
                 value: customer.lastPaymentDate == null ? 'Never' : formatDaysAgo(customer.lastPaymentDate!),
               ),
               const SizedBox(height: 24),
+              if (newSale != null && auth.can(Permission.createSales)) ...[
+                FilledButton.icon(
+                  onPressed: () => newSale!(context, customer),
+                  icon: const Icon(Icons.add_shopping_cart),
+                  label: const Text('New sale'),
+                ),
+                const SizedBox(height: 8),
+              ],
               FilledButton.icon(
                 onPressed: customer.outstandingBalance <= 0 ? null : () => showCollectPaymentSheet(context, customer, controller, auth),
                 icon: const Icon(Icons.payments),

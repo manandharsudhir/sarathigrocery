@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:sarathigrocery/features/sales/presentation/pages/new_sale_screen.dart';
+
 import 'package:sarathigrocery/app/widgets/dashboard_actions.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/core/widgets/metric_card.dart';
@@ -61,7 +63,7 @@ class OwnerDashboard extends StatelessWidget {
 
     void openCustomers() => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => CustomersScreen(controller: customers, auth: auth)),
+          MaterialPageRoute(builder: (_) => CustomersScreen(controller: customers, auth: auth, newSale: startSaleFor(sales, inventory, customers, auth))),
         );
 
     return CustomScrollView(

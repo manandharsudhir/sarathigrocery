@@ -223,7 +223,7 @@ class EmployeeDashboard extends StatelessWidget {
     final recent = cash.ledger.reversed.take(6).toList();
 
     void openLedger([int tab = 0]) => Navigator.push(context, MaterialPageRoute(builder: (_) => CashScreen(controller: cash, accounting: accounting, auth: auth, initialTabIndex: tab)));
-    void openCustomers() => Navigator.push(context, MaterialPageRoute(builder: (_) => CustomersScreen(controller: customers, auth: auth)));
+    void openCustomers() => Navigator.push(context, MaterialPageRoute(builder: (_) => CustomersScreen(controller: customers, auth: auth, newSale: startSaleFor(sales, inventory, customers, auth))));
 
     return [
       const SliverToBoxAdapter(child: SectionHeader('Money')),

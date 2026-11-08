@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:sarathigrocery/features/sales/presentation/pages/new_sale_screen.dart';
+
 import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/widgets/return_to_supplier_sheet.dart';
 
@@ -115,7 +117,7 @@ _RoleNav _navFor(AppUser user, AppScope scope, void Function(int) goToTab) {
           StaffOrdersScreen(controller: scope.ordering, auth: scope.auth, sales: scope.sales, customers: scope.customers, inventory: scope.inventory),
           SalesHistoryScreen(sales: scope.sales, inventory: scope.inventory, customers: scope.customers, auth: scope.auth),
           InventoryScreen(controller: scope.inventory, auth: scope.auth, settings: scope.settings, returnToSupplier: _returnToSupplier(scope)),
-          handlesCash ? MoreMenuScreen(items: _cashStaffMoreItems(scope)) : CustomersScreen(controller: scope.customers, auth: scope.auth),
+          handlesCash ? MoreMenuScreen(items: _cashStaffMoreItems(scope)) : CustomersScreen(controller: scope.customers, auth: scope.auth, newSale: startSaleFor(scope.sales, scope.inventory, scope.customers, scope.auth)),
         ],
       );
     case UserRole.delivery:
@@ -137,7 +139,7 @@ _RoleNav _navFor(AppUser user, AppScope scope, void Function(int) goToTab) {
 List<MoreMenuItem> _ownerMoreItems(AppScope scope) {
   final settings = scope.settings;
   return [
-    MoreMenuItem(icon: Icons.people_outline, label: 'Customers', builder: (_) => CustomersScreen(controller: scope.customers, auth: scope.auth)),
+    MoreMenuItem(icon: Icons.people_outline, label: 'Customers', builder: (_) => CustomersScreen(controller: scope.customers, auth: scope.auth, newSale: startSaleFor(scope.sales, scope.inventory, scope.customers, scope.auth))),
     MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth, ordering: scope.ordering)),
     MoreMenuItem(icon: Icons.payments_outlined, label: 'Money', builder: (_) => CashScreen(controller: scope.cash, accounting: scope.accounting, auth: scope.auth)),
     _accounts(scope),
@@ -157,7 +159,7 @@ List<MoreMenuItem> _ownerMoreItems(AppScope scope) {
 
 /// Staff with "Can handle cash & accounts" swap the Customers tab for this.
 List<MoreMenuItem> _cashStaffMoreItems(AppScope scope) => [
-      MoreMenuItem(icon: Icons.people_outline, label: 'Customers', builder: (_) => CustomersScreen(controller: scope.customers, auth: scope.auth)),
+      MoreMenuItem(icon: Icons.people_outline, label: 'Customers', builder: (_) => CustomersScreen(controller: scope.customers, auth: scope.auth, newSale: startSaleFor(scope.sales, scope.inventory, scope.customers, scope.auth))),
       MoreMenuItem(icon: Icons.payments_outlined, label: 'Money', builder: (_) => CashScreen(controller: scope.cash, accounting: scope.accounting, auth: scope.auth)),
       _accounts(scope),
       if (scope.settings.current.vatRegistered) _vatBooks(scope),

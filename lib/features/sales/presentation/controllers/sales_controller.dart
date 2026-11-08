@@ -12,6 +12,7 @@ import 'package:sarathigrocery/features/customers/domain/entities/customer_state
 import 'package:sarathigrocery/features/customers/domain/repositories/payment_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/usecases/record_payment.dart';
 import 'package:sarathigrocery/features/customers/domain/repositories/customer_repository.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
 import 'package:sarathigrocery/features/inventory/domain/repositories/product_repository.dart';
 import 'package:sarathigrocery/features/notifications/domain/repositories/notification_repository.dart';
 import 'package:sarathigrocery/core/data/remote_store.dart';
@@ -91,6 +92,38 @@ class SalesController extends ChangeNotifier {
   String get businessName => _businessName();
 
   List<Sale> get sales => _repository.sales;
+
+  /// What New Sale lists before anything is typed: [customer]'s usual
+  /// products first (most often bought), then the shop's best sellers.
+  List<Product> suggestedProducts(Customer? customer, {int limit = 40}) {
+    final mine = <Product, int>{}, all = <Product, int>{};
+    for (final s in sales) {
+      if (s.status != SaleStatus.completed || s.isDoorReturn) continue;
+      for (final i in s.items) {
+        all[i.product] = (all[i.product] ?? 0) + 1;
+        if (customer != null && s.customer?.id == customer.id) mine[i.product] = (mine[i.product] ?? 0) + 1;
+      }
+    }
+    List<Product> ranked(Map<Product, int> m) => (m.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).map((e) => e.key).toList();
+    return {...ranked(mine), ...ranked(all)}.take(limit).toList();
+  }
+
+  /// Customers of the latest sales, newest first.
+  List<Customer> get recentCustomers => {
+        for (final s in sales.reversed)
+          if (s.customer != null) s.customer!,
+      }.take(10).toList();
+
+  /// What [customer] last paid for [product] per [unit], if ever.
+  double? lastPrice(Customer customer, Product product, String unit) {
+    for (final s in sales.reversed) {
+      if (s.customer?.id != customer.id || s.status != SaleStatus.completed || s.isDoorReturn) continue;
+      for (final i in s.items) {
+        if (i.product.id == product.id && i.unit == unit) return i.unitPrice;
+      }
+    }
+    return null;
+  }
 
   double get todayRevenue => _repository.todayRevenue;
 
