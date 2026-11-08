@@ -27,6 +27,9 @@ class ReverseSale {
   /// A tax-invoiced sale is reversed by a numbered credit note ([creditNote]).
   bool call(Sale sale, SaleStatus newStatus, String reason, {required String userName, BillNumber? creditNote}) {
     if (sale.status != SaleStatus.completed) return false;
+    if (sale.isDoorReturn || _sales.sales.any((r) => r.returnOf == sale.id && r.status == SaleStatus.completed)) {
+      throw StateError('A bill with goods refused at delivery can\'t be cancelled or returned whole.');
+    }
     if (sale.invoiceNumber != null && creditNote == null) throw StateError('A tax invoice is reversed with a credit note.');
     if (creditNote != null) {
       _sales.addCreditNote(CreditNote(

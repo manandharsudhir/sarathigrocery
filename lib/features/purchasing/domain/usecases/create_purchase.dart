@@ -27,9 +27,9 @@ class CreatePurchase {
   final Books _books;
 
   Purchase call(Supplier supplier, List<PurchaseItem> items, double paidAmount,
-      {required String userName, String account = 'cash', double vatAmount = 0, String supplierBillNo = '', DateTime? supplierBillDate}) {
+      {required String userName, String account = 'cash', double vatAmount = 0, String supplierBillNo = '', DateTime? supplierBillDate, String? corrects}) {
     final purchase = _purchases.record(supplier, items, paidAmount,
-        account: account, vatAmount: vatAmount, supplierBillNo: supplierBillNo, supplierBillDate: supplierBillDate);
+        account: account, vatAmount: vatAmount, supplierBillNo: supplierBillNo, supplierBillDate: supplierBillDate, corrects: corrects);
 
     for (final item in items) {
       final p = item.product;
@@ -50,6 +50,7 @@ class CreatePurchase {
         note: 'Purchase ${purchase.id} payment - ${supplier.name}',
         reference: purchase.id,
         account: account,
+        journalId: 'purchase-${purchase.id}',
       );
     }
 

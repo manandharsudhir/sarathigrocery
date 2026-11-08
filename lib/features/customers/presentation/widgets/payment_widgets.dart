@@ -100,7 +100,10 @@ class PaymentReceipt extends StatelessWidget {
 
 /// Everything the collector captured in [CollectPaymentForm].
 class CollectInput {
-  const CollectInput({required this.amount, required this.method, required this.reference, this.signature, this.signedName = ''});
+  const CollectInput({required this.amount, required this.method, required this.reference, this.signature, this.signedName = '', this.refused = const {}});
+
+  /// Line index → quantity the customer refused (in that line's unit).
+  final Map<int, double> refused;
 
   final double amount;
   final PaymentMethod method;
@@ -125,7 +128,19 @@ class CollectPaymentForm extends StatefulWidget {
     this.allowZero = false,
     this.signatureRequired = false,
     this.billLabel = 'order',
+    this.alreadyBilled = false,
+    this.refusableLines,
+    this.refusedValue,
   });
+
+  /// The order's bill is already on the customer's balance (issued at
+  /// dispatch), so delivering adds nothing to it.
+  final bool alreadyBilled;
+
+  /// Lines the customer may refuse at the door ("Some items refused"), and
+  /// what refusing [refused] takes off the bill.
+  final List<({String label, double qty, String unit})>? refusableLines;
+  final double Function(Map<int, double> refused)? refusedValue;
 
   /// What [orderTotal] is for, in the receipt split ("order", "bill").
   final String billLabel;
@@ -160,8 +175,28 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
   PaymentMethod _method = PaymentMethod.cash;
   bool _busy = false;
   String? _error;
+  bool _showRefused = false;
+  late final _accepted = [for (final l in widget.refusableLines ?? const <({String label, double qty, String unit})>[]) TextEditingController(text: formatQty(l.qty))];
 
   double get _value => double.tryParse(_amount.text.trim()) ?? 0;
+
+  /// Line index → refused quantity; null if an accepted entry is invalid.
+  Map<int, double>? get _refused {
+    final lines = widget.refusableLines;
+    if (lines == null || !_showRefused) return const {};
+    final out = <int, double>{};
+    for (final (i, l) in lines.indexed) {
+      final accepted = double.tryParse(_accepted[i].text.trim());
+      if (accepted == null || accepted < 0 || accepted > l.qty + 1e-9) return null;
+      if (l.qty - accepted > 1e-9) out[i] = l.qty - accepted;
+    }
+    return out;
+  }
+
+  double get _refusedValue {
+    final r = _refused;
+    return r == null || r.isEmpty ? 0 : widget.refusedValue!(r);
+  }
 
   Future<void> _submit() async {
     setState(() {
@@ -170,6 +205,8 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
     });
     try {
       if (_value < 0 || (_value == 0 && !widget.allowZero)) throw PaymentException('Enter the amount received.');
+      final refused = _refused;
+      if (refused == null) throw PaymentException('Accepted quantity must be between 0 and what was sent.');
       if (widget.signatureRequired && _signature == null) throw PaymentException('${widget.customer.name} must sign below.');
       if (_signature != null && _signedName.text.trim().isEmpty) throw PaymentException('Enter the name of the person who signed.');
       final message = await widget.onSubmit(CollectInput(
@@ -178,6 +215,7 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
         reference: _reference.text,
         signature: _signature?.encode(),
         signedName: _signedName.text,
+        refused: refused,
       ));
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
@@ -194,11 +232,14 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
 
   @override
   Widget build(BuildContext context) {
-    final orderDue = widget.orderTotal == null ? 0.0 : (widget.orderTotal! - widget.orderAlreadyPaid).clamp(0.0, double.infinity);
+    final refusedValue = _refusedValue;
+    final orderDue = widget.orderTotal == null ? 0.0 : (widget.orderTotal! - refusedValue - widget.orderAlreadyPaid).clamp(0.0, double.infinity);
     final toOrder = _value < orderDue ? _value : orderDue;
     final toEarlier = _value - toOrder;
-    // Delivering adds the order to the balance first.
-    final balanceBefore = widget.customer.outstandingBalance + (widget.allowZero ? orderDue : 0);
+    // Delivering adds the order to the balance first (unless billed at
+    // dispatch: then refused goods come off it).
+    final balanceBefore = widget.customer.outstandingBalance + (widget.alreadyBilled ? -refusedValue : (widget.allowZero ? orderDue : 0));
+    final lines = widget.refusableLines;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
@@ -216,7 +257,27 @@ class _CollectPaymentFormState extends State<CollectPaymentForm> {
               decoration: InputDecoration(labelText: widget.allowZero ? 'Amount received now (0 = on credit)' : 'Amount received (NPR)'),
               onChanged: (_) => setState(() {}),
             ),
-            if (widget.allowZero && balanceBefore - _value > widget.customer.creditLimit + 0.005)
+            if (lines != null && lines.isNotEmpty) ...[
+              if (!_showRefused)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(onPressed: () => setState(() => _showRefused = true), icon: const Icon(Icons.remove_shopping_cart_outlined), label: const Text('Some items refused')),
+                )
+              else ...[
+                const SizedBox(height: 8),
+                Text('Accepted quantity', style: Theme.of(context).textTheme.labelLarge),
+                for (final (i, l) in lines.indexed)
+                  Row(children: [
+                    Expanded(child: Text('${l.label} (sent ${formatQty(l.qty)} ${l.unit})')),
+                    SizedBox(
+                      width: 80,
+                      child: TextField(controller: _accepted[i], keyboardType: const TextInputType.numberWithOptions(decimal: true), textAlign: TextAlign.end, onChanged: (_) => setState(() {})),
+                    ),
+                  ]),
+                if (refusedValue > 0) Text('Refused: −${formatNpr(refusedValue)} off the bill', style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ],
+            if (widget.allowZero && !widget.alreadyBilled && balanceBefore - _value > widget.customer.creditLimit + 0.005)
               Text(
                 'Over the credit limit by ${formatNpr(balanceBefore - _value - widget.customer.creditLimit)}: collect at least that, or deliver anyway (the owner is told).',
                 style: const TextStyle(color: Colors.orange),

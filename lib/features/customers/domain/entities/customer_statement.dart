@@ -27,6 +27,7 @@ class CustomerStatement {
     required this.actualBalance,
     required this.verifiable,
     required this.paidBySale,
+    required this.returnedBySale,
     required this.openingPaid,
     required this.allocations,
   });
@@ -43,6 +44,9 @@ class CustomerStatement {
 
   /// How much of each bill (by sale id) has been paid off.
   final Map<String, double> paidBySale;
+
+  /// Goods refused at the door, per bill (sale id), as a positive amount.
+  final Map<String, double> returnedBySale;
 
   /// How much of the opening balance has been paid off.
   final double openingPaid;
@@ -61,7 +65,9 @@ class CustomerStatement {
 
   double paidFor(Sale sale) => paidBySale[sale.id] ?? 0;
 
-  double dueFor(Sale sale) => sale.status == SaleStatus.completed ? sale.total - paidFor(sale) : 0;
+  double returnedFor(Sale sale) => returnedBySale[sale.id] ?? 0;
+
+  double dueFor(Sale sale) => sale.status == SaleStatus.completed && !sale.isDoorReturn ? sale.total - returnedFor(sale) - paidFor(sale) : 0;
 }
 
 String _paymentTitle(CustomerPayment p, List<Sale> bills) {
@@ -96,13 +102,23 @@ CustomerStatement buildStatement(Customer customer, Iterable<Sale> allSales, Ite
     final s = e.sale;
     final p = e.payment;
     final title = s != null
-        ? '${s.orderId != null ? 'Order ${s.orderId} invoice' : 'Credit sale ${s.id}'}${s.status == SaleStatus.completed ? '' : ' (${s.status.name})'}'
+        ? s.isDoorReturn
+            ? '${s.orderId != null ? 'Refused at delivery' : 'Returned'} (bill ${bills.where((b) => b.id == s.returnOf).firstOrNull?.invoiceNumber ?? s.returnOf})${s.invoiceNumber == null ? '' : ' · credit note ${s.invoiceNumber}'}'
+            : '${s.orderId != null ? 'Order ${s.orderId} invoice' : 'Credit sale ${s.invoiceNumber ?? s.id}'}'
+                '${s.status == SaleStatus.completed ? '' : bills.any((b) => b.corrects == s.id) ? ' (corrected)' : ' (${s.status.name})'}'
+                '${s.corrects == null ? '' : ' · corrects ${bills.where((b) => b.id == s.corrects).firstOrNull?.invoiceNumber ?? s.corrects}'}'
         : '${_paymentTitle(p!, bills)} · ${paymentMethodLabel(p.method)}${p.isReversed ? ' (undone)' : ''}';
     lines.add(StatementLine(date: e.date, title: title, change: effect(e), balance: running, sale: s, payment: p));
   }
 
   // Allocation.
-  final due = <String, double>{for (final s in bills) if (s.status == SaleStatus.completed) s.id: s.total};
+  final due = <String, double>{for (final s in bills) if (s.status == SaleStatus.completed && !s.isDoorReturn) s.id: s.total};
+  // Refused goods come off their own bill.
+  final returnedBySale = <String, double>{};
+  for (final r in bills.where((s) => s.isDoorReturn && s.status == SaleStatus.completed)) {
+    returnedBySale[r.returnOf!] = (returnedBySale[r.returnOf!] ?? 0) - r.total;
+    if (due.containsKey(r.returnOf)) due[r.returnOf!] = due[r.returnOf!]! + r.total;
+  }
   var openingDue = opening > 0 ? opening : 0.0;
   final paidBySale = <String, double>{};
   var openingPaid = 0.0;
@@ -126,9 +142,14 @@ CustomerStatement buildStatement(Customer customer, Iterable<Sale> allSales, Ite
     }
 
     final payment = payments.where((p) => p.id == paymentId).firstOrNull;
+    // A corrected bill hands its payments on to the bill that replaced it.
+    var billId = payment?.saleId;
+    for (var hops = 0; billId != null && !due.containsKey(billId) && hops < 20; hops++) {
+      billId = bills.where((s) => s.corrects == billId).firstOrNull?.id;
+    }
     final linked = payment == null
         ? null
-        : bills.where((s) => due.containsKey(s.id) && (s.id == payment.saleId || (payment.orderId != null && s.orderId == payment.orderId))).firstOrNull;
+        : bills.where((s) => due.containsKey(s.id) && (s.id == billId || (payment.orderId != null && s.orderId == payment.orderId))).firstOrNull;
     if (linked != null) pay(linked.id, due[linked.id]!);
     pay('opening', openingDue);
     for (final s in bills) {
@@ -149,6 +170,7 @@ CustomerStatement buildStatement(Customer customer, Iterable<Sale> allSales, Ite
     actualBalance: customer.outstandingBalance,
     verifiable: verifiable,
     paidBySale: paidBySale,
+    returnedBySale: returnedBySale,
     openingPaid: openingPaid,
     allocations: allocations,
   );

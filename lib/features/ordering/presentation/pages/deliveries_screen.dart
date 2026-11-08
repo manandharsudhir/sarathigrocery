@@ -44,7 +44,7 @@ class DeliveriesScreen extends StatelessWidget {
                   ? FilledButton(onPressed: () => showDeliverSheet(context, order, ordering, auth, sales), child: const Text('Deliver'))
                   : isOpen && order.status == OrderStatus.ready
                       ? FilledButton.tonal(
-                          onPressed: () => ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: user.name, userId: user.id),
+                          onPressed: () => dispatchOrder(context, order, ordering, auth, sales),
                           child: const Text('Start'),
                         )
                       : null,

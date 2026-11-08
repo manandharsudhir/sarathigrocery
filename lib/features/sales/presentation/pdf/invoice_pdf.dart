@@ -17,8 +17,10 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
   BusinessSettings seller, {
   CreditNote? creditNote,
   double? paid,
+  double returned = 0,
 }) {
   final showPaid = paid != null && sale.isCredit && creditNote == null;
+  final net = sale.total - returned;
   final tax = sale.invoiceNumber != null;
   final date = creditNote?.date ?? sale.date;
   return (
@@ -32,7 +34,7 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
       ('Date', '${formatBs(date)} (${formatDate(date)})'),
       ('Buyer', sale.customer?.name ?? 'Walk-in customer'),
       if (sale.buyerPan.isNotEmpty) ('Buyer PAN', sale.buyerPan),
-      ('Payment', billPayment(sale, paid: paid)),
+      ('Payment', billPayment(sale, paid: paid, returned: returned)),
     ],
     lines: [
       for (final i in sale.items)
@@ -45,7 +47,8 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
         ('VAT', formatNpr(sale.vatAmount)),
       ],
       ('Total', formatNpr(sale.total)),
-      if (showPaid) ...[('Paid', formatNpr(paid)), ('Balance due', formatNpr(sale.total - paid))],
+      if (returned > 0.005 && creditNote == null) ...[(sale.orderId != null ? 'Refused at delivery' : 'Returned', '−${formatNpr(returned)}'), ('Net', formatNpr(net))],
+      if (showPaid) ...[('Paid', formatNpr(paid)), ('Balance due', formatNpr(net - paid))],
     ],
   );
 }
@@ -53,12 +56,14 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
 /// Printed bill, laid out like a typical Nepali tax invoice: shop header,
 /// customer block left / invoice block right, ruled item table, amount in
 /// words, totals, and signature lines.
-Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? creditNote, double? paid}) {
+/// [copies]: one page per label (printing: customer + shop copy).
+Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? creditNote, double? paid, double returned = 0, List<String> copies = const ['']}) {
   final tax = sale.invoiceNumber != null;
   final date = creditNote?.date ?? sale.date;
-  final c = billContent(sale, seller, creditNote: creditNote, paid: paid);
+  final c = billContent(sale, seller, creditNote: creditNote, paid: paid, returned: returned);
   final customer = sale.customer;
   return billLayoutPdf(
+    copies: copies,
     seller: seller,
     title: c.title,
     vat: tax,
@@ -66,7 +71,7 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
       ('Customer Name', customer?.name ?? 'Walk-in customer'),
       if (customer != null && customer.location.isNotEmpty) ('Customer Address', customer.location),
       if (sale.buyerPan.isNotEmpty) ('Customer ${tax ? 'VAT' : 'PAN'} No', sale.buyerPan),
-      ('Mode of payment', billPayment(sale, paid: paid)),
+      ('Mode of payment', billPayment(sale, paid: paid, returned: returned)),
     ],
     right: [
       ('Invoice Date', billDmy(date)),
@@ -85,7 +90,9 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
           'Exempt sales' => (k, billMoney(sale.exemptAmount)),
           'Taxable amount' => (k, billMoney(sale.taxableAmount)),
           'Paid' => (k, billMoney(paid ?? 0)),
-          'Balance due' => (k, billMoney(sale.total - (paid ?? 0))),
+          'Refused at delivery' || 'Returned' => (k, '-${billMoney(returned)}'),
+          'Net' => (k, billMoney(sale.total - returned)),
+          'Balance due' => (k, billMoney(sale.total - returned - (paid ?? 0))),
           _ => (k, v),
         },
     ],
@@ -98,8 +105,10 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
 /// The printed bill's page, shared by bills and order slips: shop header
 /// with [title], [left]/[right] info blocks, item table, amount in words,
 /// [totals] (already formatted; "Total Amount" in bold), remarks and
-/// signature lines. [vat] picks the "VAT No." vs "PAN No." label.
+/// signature lines. [vat] picks the "VAT No." vs "PAN No." label. One page
+/// per [copies] label ("Customer copy", "Shop copy"); '' = unlabelled.
 Future<Uint8List> billLayoutPdf({
+  List<String> copies = const [''],
   required BusinessSettings seller,
   required String title,
   required bool vat,
@@ -137,99 +146,102 @@ Future<Uint8List> billLayoutPdf({
   const ctr = pw.TextAlign.center;
 
   final doc = pw.Document();
-  doc.addPage(pw.Page(
-    margin: const pw.EdgeInsets.all(28),
-    build: (_) => pw.DefaultTextStyle(
-      style: const pw.TextStyle(fontSize: 10),
-      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
-        pw.Text(seller.businessName.toUpperCase(), textAlign: ctr, style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-        if (seller.businessAddress.isNotEmpty) pw.Text(seller.businessAddress.toUpperCase(), textAlign: ctr, style: bold),
-        if (seller.businessPhone.isNotEmpty) pw.Text('Tel : ${seller.businessPhone}', textAlign: ctr, style: bold),
-        pw.SizedBox(height: 8),
-        pw.Stack(alignment: pw.Alignment.center, children: [
-          pw.Align(
-            alignment: pw.Alignment.centerLeft,
-            child: seller.panNumber.isEmpty ? pw.SizedBox() : pw.Text('${vat ? 'VAT' : 'PAN'} No.  ${seller.panNumber}', style: bold),
-          ),
-          pw.Text(title.toUpperCase(), style: bold),
-        ]),
-        pw.Divider(height: 8, thickness: 1),
-        pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Expanded(flex: 3, child: info(left, 100)),
-          pw.SizedBox(width: 16),
-          pw.Expanded(flex: 2, child: info(right, 80)),
-        ]),
-        pw.SizedBox(height: 10),
-        pw.Table(
-          border: pw.TableBorder.all(width: 0.8),
-          columnWidths: const {
-            0: pw.FixedColumnWidth(30),
-            1: pw.FlexColumnWidth(5),
-            2: pw.FixedColumnWidth(50),
-            3: pw.FixedColumnWidth(50),
-            4: pw.FixedColumnWidth(70),
-            5: pw.FixedColumnWidth(80),
-          },
-          children: [
-            pw.TableRow(children: [
-              td('S.N', align: ctr, style: bold),
-              td('Particular', align: ctr, style: bold),
-              td('QTY', align: ctr, style: bold),
-              td('Unit', align: ctr, style: bold),
-              td('Rate', align: ctr, style: bold),
-              td('Amount', align: ctr, style: bold),
-            ]),
-            for (final (n, i) in items.indexed)
-              pw.TableRow(children: [
-                td('${n + 1}', align: ctr),
-                td(i.name),
-                td(formatQty(i.qty), align: r),
-                td(i.unit),
-                td(billMoney(i.rate), align: r),
-                td(billMoney(i.amount), align: r),
-              ]),
-          ],
-        ),
-        pw.Container(
-          decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.8)),
-          child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Expanded(
-              child: pw.Padding(
-                padding: const pw.EdgeInsets.all(6),
-                child: pw.RichText(text: pw.TextSpan(children: [
-                  pw.TextSpan(text: 'Amount In Words : ', style: bold),
-                  pw.TextSpan(text: amountInWords(total)),
-                ])),
-              ),
+  for (final copy in copies) {
+    doc.addPage(pw.Page(
+      margin: const pw.EdgeInsets.all(28),
+      build: (_) => pw.DefaultTextStyle(
+        style: const pw.TextStyle(fontSize: 10),
+        child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+          if (copy.isNotEmpty) pw.Text(copy.toUpperCase(), textAlign: r, style: small),
+          pw.Text(seller.businessName.toUpperCase(), textAlign: ctr, style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+          if (seller.businessAddress.isNotEmpty) pw.Text(seller.businessAddress.toUpperCase(), textAlign: ctr, style: bold),
+          if (seller.businessPhone.isNotEmpty) pw.Text('Tel : ${seller.businessPhone}', textAlign: ctr, style: bold),
+          pw.SizedBox(height: 8),
+          pw.Stack(alignment: pw.Alignment.center, children: [
+            pw.Align(
+              alignment: pw.Alignment.centerLeft,
+              child: seller.panNumber.isEmpty ? pw.SizedBox() : pw.Text('${vat ? 'VAT' : 'PAN'} No.  ${seller.panNumber}', style: bold),
             ),
-            pw.SizedBox(
-              width: 200,
-              child: pw.Table(
-                border: const pw.TableBorder(left: pw.BorderSide(width: 0.8), horizontalInside: pw.BorderSide(width: 0.8), verticalInside: pw.BorderSide(width: 0.8)),
-                children: [
-                  for (final (k, v) in totals)
-                    pw.TableRow(children: [td(k, style: bold), td(v, align: r, style: k == 'Total Amount' ? bold : null)]),
-                ],
-              ),
-            ),
+            pw.Text(title.toUpperCase(), style: bold),
           ]),
-        ),
-        pw.Container(
-          padding: const pw.EdgeInsets.all(6),
-          decoration: const pw.BoxDecoration(border: pw.Border(left: pw.BorderSide(width: 0.8), right: pw.BorderSide(width: 0.8), bottom: pw.BorderSide(width: 0.8))),
-          child: pw.Text('Remarks : $remarks'),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Text('Printed Date: ${billDmy(now)}, Time: ${_time(now)}', style: small),
-        pw.SizedBox(height: 40),
-        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-          _signature(preparedBy, 'Prepared By'),
-          _signature('', 'Received By'),
-          _signature('', 'Authorized signature\nFor: ${seller.businessName}'),
+          pw.Divider(height: 8, thickness: 1),
+          pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Expanded(flex: 3, child: info(left, 100)),
+            pw.SizedBox(width: 16),
+            pw.Expanded(flex: 2, child: info(right, 80)),
+          ]),
+          pw.SizedBox(height: 10),
+          pw.Table(
+            border: pw.TableBorder.all(width: 0.8),
+            columnWidths: const {
+              0: pw.FixedColumnWidth(30),
+              1: pw.FlexColumnWidth(5),
+              2: pw.FixedColumnWidth(50),
+              3: pw.FixedColumnWidth(50),
+              4: pw.FixedColumnWidth(70),
+              5: pw.FixedColumnWidth(80),
+            },
+            children: [
+              pw.TableRow(children: [
+                td('S.N', align: ctr, style: bold),
+                td('Particular', align: ctr, style: bold),
+                td('QTY', align: ctr, style: bold),
+                td('Unit', align: ctr, style: bold),
+                td('Rate', align: ctr, style: bold),
+                td('Amount', align: ctr, style: bold),
+              ]),
+              for (final (n, i) in items.indexed)
+                pw.TableRow(children: [
+                  td('${n + 1}', align: ctr),
+                  td(i.name),
+                  td(formatQty(i.qty), align: r),
+                  td(i.unit),
+                  td(billMoney(i.rate), align: r),
+                  td(billMoney(i.amount), align: r),
+                ]),
+            ],
+          ),
+          pw.Container(
+            decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.8)),
+            child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Expanded(
+                child: pw.Padding(
+                  padding: const pw.EdgeInsets.all(6),
+                  child: pw.RichText(text: pw.TextSpan(children: [
+                    pw.TextSpan(text: 'Amount In Words : ', style: bold),
+                    pw.TextSpan(text: amountInWords(total)),
+                  ])),
+                ),
+              ),
+              pw.SizedBox(
+                width: 200,
+                child: pw.Table(
+                  border: const pw.TableBorder(left: pw.BorderSide(width: 0.8), horizontalInside: pw.BorderSide(width: 0.8), verticalInside: pw.BorderSide(width: 0.8)),
+                  children: [
+                    for (final (k, v) in totals)
+                      pw.TableRow(children: [td(k, style: bold), td(v, align: r, style: k == 'Total Amount' ? bold : null)]),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(6),
+            decoration: const pw.BoxDecoration(border: pw.Border(left: pw.BorderSide(width: 0.8), right: pw.BorderSide(width: 0.8), bottom: pw.BorderSide(width: 0.8))),
+            child: pw.Text('Remarks : $remarks'),
+          ),
+          pw.SizedBox(height: 10),
+          pw.Text('Printed Date: ${billDmy(now)}, Time: ${_time(now)}', style: small),
+          pw.SizedBox(height: 40),
+          pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+            _signature(preparedBy, 'Prepared By'),
+            _signature('', 'Received By'),
+            _signature('', 'Authorized signature\nFor: ${seller.businessName}'),
+          ]),
         ]),
-      ]),
-    ),
-  ));
+      ),
+    ));
+  }
   return doc.save();
 }
 
@@ -244,10 +256,10 @@ pw.Widget _signature(String name, String label) => pw.SizedBox(
 
 /// "Credit" for udharo, else the money account it was paid into.
 /// [paid]: how much of a credit bill is paid off so far, when known.
-String billPayment(Sale sale, {double? paid}) {
+String billPayment(Sale sale, {double? paid, double returned = 0}) {
   if (!sale.isCredit) return accountName(sale.account);
   if (paid == null || paid < 0.005) return 'Credit';
-  return paid >= sale.total - 0.005 ? 'Paid' : 'Part paid';
+  return paid >= sale.total - returned - 0.005 ? 'Paid' : 'Part paid';
 }
 
 String _two(int n) => n.toString().padLeft(2, '0');

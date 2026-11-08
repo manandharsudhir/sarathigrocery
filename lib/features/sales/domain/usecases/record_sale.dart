@@ -41,6 +41,7 @@ class RecordSale {
     VatTerms? vat,
     BillNumber? bill,
     double paidNow = 0,
+    Sale? corrects,
   }) {
     if (vat != null && bill == null) throw StateError('A VAT shop\'s sale needs a tax invoice number.');
     // ponytail: checked in the app only — rules can't loop over lines; a
@@ -58,7 +59,10 @@ class RecordSale {
     final vatAmount = vatOn(lines - exempt, vat);
     final total = lines + (vat != null && !vat.included ? vatAmount : 0);
     if (paidNow > total + 0.005) throw ArgumentError('Paid now (${paidNow.toStringAsFixed(2)}) is more than the bill (${total.toStringAsFixed(2)}).');
-    final needsApproval = isCredit && customer != null && customer.outstandingBalance + total - paidNow > customer.creditLimit;
+    // A correction is saved with the old bill's cancellation: what that
+    // takes off the balance doesn't count against the limit.
+    final replacing = corrects != null && corrects.isCredit && corrects.customer?.id == customer?.id ? corrects.total : 0.0;
+    final needsApproval = isCredit && customer != null && customer.outstandingBalance - replacing + total - paidNow > customer.creditLimit;
 
     final sale = _sales.record(
       items: items,
@@ -75,6 +79,7 @@ class RecordSale {
       invoiceSeries: bill?.series,
       invoiceSeq: bill?.seq,
       buyerPan: customer?.pan ?? '',
+      corrects: corrects?.id,
     );
     _books.sale(sale);
 

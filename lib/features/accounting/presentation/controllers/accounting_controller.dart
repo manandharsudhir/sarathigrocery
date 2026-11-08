@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:sarathigrocery/features/audit/domain/entities/audit_log_entry.dart';
+
 import 'package:sarathigrocery/core/services/app_signal.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/accounting/domain/books.dart';
@@ -43,6 +45,28 @@ class AccountingController extends ChangeNotifier {
   final AuditRepository _audit;
 
   BusinessSettings get settings => _settings.current;
+
+  /// Audit actions that undo or redo something already recorded.
+  static const correctionActions = {
+    'Sale cancelled', 'Sale returned', 'Sale corrected', 'Items returned', 'Payment undone',
+    'Entry reversed', 'Purchase reversed', 'Purchase corrected', 'Order not delivered',
+  };
+
+  /// Every reversal and correction, newest first (owner: the audit log).
+  List<AuditLogEntry> get corrections => [for (final e in _audit.entries) if (correctionActions.contains(e.action)) e];
+
+  /// People who made more corrections in the last 7 days than the owner's
+  /// alert level, with their count. A correction saves as a cancellation
+  /// plus its own entry; only the latter is counted.
+  Map<String, int> get frequentCorrectors {
+    final since = DateTime.now().subtract(const Duration(days: 7));
+    final counts = <String, int>{};
+    for (final e in corrections) {
+      if (e.date.isBefore(since) || (e.action == 'Sale cancelled' && e.newValue.contains('Corrected: ')) || (e.action == 'Purchase reversed' && e.newValue.startsWith('Corrected: '))) continue;
+      counts[e.userName] = (counts[e.userName] ?? 0) + 1;
+    }
+    return {for (final c in counts.entries) if (c.value > settings.correctionAlert) c.key: c.value};
+  }
 
   List<JournalEntry> get journal => _books.entries;
 

@@ -2,27 +2,88 @@ import 'package:flutter/material.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
+import 'package:sarathigrocery/core/widgets/correction_dialogs.dart';
+import 'package:sarathigrocery/features/accounting/domain/books.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
+import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
+import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
 import 'package:sarathigrocery/features/purchasing/domain/entities/purchase.dart';
+import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
+import 'package:sarathigrocery/features/purchasing/presentation/pages/new_purchase_screen.dart';
+import 'package:sarathigrocery/features/suppliers/presentation/controllers/suppliers_controller.dart';
 
-/// Read-only view of one purchase. Purchases are never edited after they're
-/// recorded, so this doesn't listen for changes.
+/// One purchase. Purchases are never edited: one entered by mistake is
+/// reversed, or corrected (reversed and entered again), when [purchasing]
+/// and friends are given and the user may.
 class PurchaseDetailScreen extends StatelessWidget {
-  const PurchaseDetailScreen({super.key, required this.purchase, this.openSupplier});
+  const PurchaseDetailScreen({super.key, required this.purchase, this.openSupplier, this.purchasing, this.suppliers, this.inventory, this.auth});
 
   final Purchase purchase;
+  final PurchasingController? purchasing;
+  final SuppliersController? suppliers;
+  final InventoryController? inventory;
+  final AuthController? auth;
 
   /// Makes the supplier name a link. Null when opened from the supplier.
   final VoidCallback? openSupplier;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => purchasing == null ? _build(context) : ListenableBuilder(listenable: purchasing!, builder: (context, _) => _build(context));
+
+  Future<void> _reverse(BuildContext context, bool owner) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final reason = await askReason(context,
+        title: 'Reverse purchase ${purchase.id}?',
+        message: 'Use this for a purchase entered twice or by mistake. Its stock comes back out, ${purchase.supplier.businessName} is owed less'
+            '${purchase.paidAmount > 0 ? ', ${formatNpr(purchase.paidAmount)} goes back to ${accountName(purchase.account)}' : ''}, and the books are reversed.');
+    if (reason == null) return;
+    try {
+      purchasing!.reversePurchase(purchase, reason, userName: auth!.currentUser?.name ?? '', owner: owner);
+      messenger.showSnackBar(const SnackBar(content: Text('Purchase reversed.')));
+    } on AccountingException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Widget _build(BuildContext context) {
     final p = purchase;
     final muted = TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final owner = auth?.currentUser?.role == UserRole.owner;
+    final canFix = purchasing != null && !p.isReversed && (auth?.can(Permission.reconcileCash) ?? false) && (owner || isToday(p.date));
+    final replacement = purchasing?.correctionOf(p);
     return Scaffold(
       appBar: AppBar(title: Text('Purchase ${p.id}')),
+      bottomNavigationBar: !canFix
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(children: [
+                  Expanded(child: OutlinedButton(onPressed: () => _reverse(context, owner), child: const Text('Reverse'))),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.pushReplacement(
+                          context, MaterialPageRoute(builder: (_) => NewPurchaseScreen(purchasing: purchasing!, suppliers: suppliers!, inventory: inventory!, auth: auth!, corrects: p))),
+                      child: const Text('Correct'),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (p.isReversed)
+            Card(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: ListTile(
+                title: Text(replacement == null ? 'Reversed' : 'Corrected: replaced by ${replacement.id}'),
+                subtitle: Text('${formatDate(p.reversedAt!)} by ${p.reversedByName}: ${p.reversalReason}'),
+              ),
+            ),
+          if (p.corrects != null) Text('Corrects purchase ${p.corrects}', style: muted),
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: Text(p.supplier.businessName, style: const TextStyle(fontWeight: FontWeight.w600)),

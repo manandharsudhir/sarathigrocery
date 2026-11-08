@@ -138,7 +138,7 @@ List<MoreMenuItem> _ownerMoreItems(AppScope scope) {
   final settings = scope.settings;
   return [
     MoreMenuItem(icon: Icons.people_outline, label: 'Customers', builder: (_) => CustomersScreen(controller: scope.customers, auth: scope.auth)),
-    MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth)),
+    MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth, ordering: scope.ordering)),
     MoreMenuItem(icon: Icons.payments_outlined, label: 'Money', builder: (_) => CashScreen(controller: scope.cash, accounting: scope.accounting, auth: scope.auth)),
     _accounts(scope),
     if (scope.settings.current.vatRegistered) _vatBooks(scope),
@@ -161,7 +161,7 @@ List<MoreMenuItem> _cashStaffMoreItems(AppScope scope) => [
       MoreMenuItem(icon: Icons.payments_outlined, label: 'Money', builder: (_) => CashScreen(controller: scope.cash, accounting: scope.accounting, auth: scope.auth)),
       _accounts(scope),
       if (scope.settings.current.vatRegistered) _vatBooks(scope),
-      MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth)),
+      MoreMenuItem(icon: Icons.price_check_outlined, label: 'Customer Payments', builder: (_) => PaymentsScreen(payments: scope.payments, auth: scope.auth, ordering: scope.ordering)),
       if (scope.settings.has(Feature.suppliers)) ...[
         MoreMenuItem(icon: Icons.local_shipping_outlined, label: 'Purchases', builder: (_) => PurchasesScreen(purchasing: scope.purchasing, suppliers: scope.suppliers, inventory: scope.inventory, cash: scope.cash, auth: scope.auth)),
         MoreMenuItem(icon: Icons.factory_outlined, label: 'Suppliers', builder: (_) => SuppliersScreen(controller: scope.suppliers, purchasing: scope.purchasing, cash: scope.cash, inventory: scope.inventory, auth: scope.auth)),
@@ -184,7 +184,8 @@ MoreMenuItem _vatBooks(AppScope scope) => MoreMenuItem(
 MoreMenuItem _reports(AppScope scope) => MoreMenuItem(
       icon: Icons.bar_chart_outlined,
       label: 'Reports',
-      builder: (_) => ReportsScreen(sales: scope.sales, purchasing: scope.purchasing, cash: scope.cash, inventory: scope.inventory, customers: scope.customers, suppliers: scope.suppliers, settings: scope.settings, accounts: (_) => AccountingScreen(controller: scope.accounting, auth: scope.auth, suppliers: scope.suppliers, onExport: (p) => shareAccountantExport(scope, p)), daily: (from, to) => dailySummaryFor(scope, from, to), onExportDaily: (from, to) => shareDailySummary(scope, from, to)),
+      builder: (_) => ReportsScreen(sales: scope.sales, purchasing: scope.purchasing, cash: scope.cash, inventory: scope.inventory, customers: scope.customers, suppliers: scope.suppliers, settings: scope.settings, accounts: (_) => AccountingScreen(controller: scope.accounting, auth: scope.auth, suppliers: scope.suppliers, onExport: (p) => shareAccountantExport(scope, p)), daily: (from, to) => dailySummaryFor(scope, from, to), onExportDaily: (from, to) => shareDailySummary(scope, from, to),
+          corrections: scope.auth.currentUser?.role == UserRole.owner ? () => scope.accounting.corrections : null),
     );
 
 class AppShell extends StatefulWidget {

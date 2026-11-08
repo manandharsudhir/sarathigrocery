@@ -29,6 +29,8 @@ abstract class SaleRepository {
     int? invoiceSeq,
     double exemptAmount,
     String buyerPan,
+    String? returnOf,
+    String? corrects,
   });
 
   List<CreditNote> get creditNotes;

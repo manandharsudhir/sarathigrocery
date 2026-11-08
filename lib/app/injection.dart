@@ -32,6 +32,7 @@ import 'package:sarathigrocery/features/ordering/data/repositories/order_reposit
 import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
 import 'package:sarathigrocery/features/purchasing/data/repositories/purchase_repository_impl.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
+import 'package:sarathigrocery/features/sales/domain/usecases/reverse_sale.dart';
 import 'package:sarathigrocery/features/sales/data/bill_numbers.dart';
 import 'package:sarathigrocery/features/sales/data/repositories/sale_repository_impl.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/vat.dart';
@@ -226,7 +227,7 @@ class AppScope {
       purchasing: PurchasingController(purchaseRepository, productRepository, supplierRepository, cashRepository, auditRepository, notificationRepository, books, moneyAccounts: moneyAccounts, vatShop: () => settingsRepository.current.vatRegistered, margin: () => settingsRepository.current.marginPercent),
       cash: CashController(cashRepository, books, auditRepository, () => settingsRepository.current),
       accounting: AccountingController(books, cashRepository, customerRepository, supplierRepository, productRepository, paymentRepository, saleRepository, settingsRepository, auditRepository),
-      ordering: OrderingController(orderRepository, productRepository, saleRepository, customerRepository, auditRepository, notificationRepository, userRepository, recordPayment, paymentRepository, writes.flush, () => settingsRepository.current.businessName, guards, books, vat: vatTerms, billNumbers: billNumbers),
+      ordering: OrderingController(orderRepository, productRepository, saleRepository, customerRepository, auditRepository, notificationRepository, userRepository, recordPayment, paymentRepository, writes.flush, () => settingsRepository.current.businessName, guards, books, vat: vatTerms, billNumbers: billNumbers, reverseSale: ReverseSale(saleRepository, productRepository, customerRepository, cashRepository, auditRepository, books)),
       employees: EmployeesController(userRepository, authRepo, auditRepository),
       settings: SettingsController(settingsRepository, authRepo, (owner) => wipeShop(owner.id, shopStore.shopId!), isFounder: () => founder()),
       auditRepository: auditRepository,

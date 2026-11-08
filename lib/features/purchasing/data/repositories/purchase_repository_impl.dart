@@ -22,6 +22,8 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
             'vatAmount': p.vatAmount,
             'supplierBillNo': p.supplierBillNo,
             'supplierBillDate': p.supplierBillDate == null ? null : toMillis(p.supplierBillDate!),
+            if (p.corrects != null) 'corrects': p.corrects,
+            if (p.reversedAt != null) ...{'reversedAt': toMillis(p.reversedAt!), 'reversedByName': p.reversedByName, 'reversalReason': p.reversalReason},
           },
           fromJson: (j) {
             final supplier = suppliers.byId(j['supplierId']);
@@ -42,9 +44,17 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
               vatAmount: toDouble(j['vatAmount']),
               supplierBillNo: j['supplierBillNo'] ?? '',
               supplierBillDate: fromMillisOrNull(j['supplierBillDate']),
+              corrects: j['corrects'],
+              reversedAt: fromMillisOrNull(j['reversedAt']),
+              reversedByName: j['reversedByName'] ?? '',
+              reversalReason: j['reversalReason'] ?? '',
             );
           },
-          merge: (p, j) => p.paidAmount = toDouble(j['paidAmount']),
+          merge: (p, j) => p
+            ..paidAmount = toDouble(j['paidAmount'])
+            ..reversedAt = fromMillisOrNull(j['reversedAt'])
+            ..reversedByName = j['reversedByName'] ?? ''
+            ..reversalReason = j['reversalReason'] ?? '',
         ),
         _returns = SyncedCollection<PurchaseReturn>(
           'purchaseReturns',
@@ -71,14 +81,29 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
   List<SyncedCollection<Object?>> get collections => [_purchases, _returns];
 
   @override
-  List<Purchase> get purchases => _purchases.items;
+  List<Purchase> get purchases => [
+        for (final p in _purchases.items)
+          if (!p.isReversed) p,
+      ];
+
+  @override
+  List<Purchase> get allPurchases => _purchases.items;
+
+  @override
+  void markReversed(Purchase purchase, {required String byName, required String reason}) {
+    purchase
+      ..reversedAt = DateTime.now()
+      ..reversedByName = byName
+      ..reversalReason = reason;
+    _purchases.save(purchase);
+  }
 
   @override
   List<PurchaseReturn> get purchaseReturns => _returns.items;
 
   @override
   Purchase record(Supplier supplier, List<PurchaseItem> items, double paidAmount,
-      {String account = 'cash', double vatAmount = 0, String supplierBillNo = '', DateTime? supplierBillDate}) {
+      {String account = 'cash', double vatAmount = 0, String supplierBillNo = '', DateTime? supplierBillDate, String? corrects}) {
     final purchase = Purchase(
       id: nextId('PU'),
       date: DateTime.now(),
@@ -89,6 +114,7 @@ class PurchaseRepositoryImpl implements PurchaseRepository {
       vatAmount: vatAmount,
       supplierBillNo: supplierBillNo,
       supplierBillDate: supplierBillDate,
+      corrects: corrects,
     );
     _purchases.add(purchase);
     return purchase;

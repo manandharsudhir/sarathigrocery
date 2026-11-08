@@ -22,6 +22,11 @@ class CustomerOrder {
     this.vatAmount = 0,
     this.vatIncluded = true,
     this.exemptAmount = 0,
+    this.invoiceId,
+    this.invoiceNumber = '',
+    this.prepaid = 0,
+    this.shopCopyAt,
+    this.shopCopyByName = '',
   });
 
   final String id;
@@ -49,6 +54,20 @@ class CustomerOrder {
   final double vatAmount;
   final bool vatIncluded;
   final double exemptAmount;
+
+  /// The bill, issued when the order goes out for delivery (sale id, and
+  /// its number as printed). Null for orders billed at the door (before
+  /// dispatch billing) or not yet dispatched.
+  String? invoiceId;
+  String invoiceNumber;
+
+  /// Paid before dispatch, as printed on the bill: the delivery person
+  /// collects the rest (they can't see other staff's payments).
+  double prepaid;
+
+  /// Someone counting in (reconcileCash) got the customer-signed shop copy.
+  DateTime? shopCopyAt;
+  String shopCopyByName;
 
   double get linesTotal => items.fold(0.0, (sum, i) => sum + i.lineTotal);
   double get total => linesTotal + (vatIncluded ? 0 : vatAmount);

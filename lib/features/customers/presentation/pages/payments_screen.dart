@@ -7,11 +7,16 @@ import 'package:sarathigrocery/features/customers/domain/entities/customer_payme
 import 'package:sarathigrocery/features/customers/presentation/controllers/payments_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_sheet.dart';
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_widgets.dart';
+import 'package:sarathigrocery/features/ordering/domain/entities/order_status.dart';
+import 'package:sarathigrocery/features/ordering/presentation/controllers/ordering_controller.dart';
 
 /// Owner/cash staff view of customer payments: cash to receive from
 /// collectors, problems (disputes, unconfirmed, shortfalls), and history.
 class PaymentsScreen extends StatelessWidget {
-  const PaymentsScreen({super.key, required this.payments, required this.auth, this.initialTab = 0});
+  const PaymentsScreen({super.key, required this.payments, required this.auth, this.initialTab = 0, this.ordering});
+
+  /// Offers "signed copy back" next to a delivery collection being counted in.
+  final OrderingController? ordering;
 
   final PaymentsController payments;
   final AuthController auth;
@@ -53,7 +58,7 @@ class PaymentsScreen extends StatelessWidget {
                       children: [
                         for (final entry in byCollector.entries) ...[
                           Text('${entry.key} · ${formatNpr(entry.value.fold(0.0, (s, p) => s + p.amount))}', style: Theme.of(context).textTheme.titleMedium),
-                          for (final p in entry.value) _PaymentTile(payment: p, payments: payments, auth: auth, showReceive: true),
+                          for (final p in entry.value) _PaymentTile(payment: p, payments: payments, auth: auth, showReceive: true, ordering: ordering),
                           const Divider(),
                         ],
                       ],
@@ -71,7 +76,9 @@ class PaymentsScreen extends StatelessWidget {
 }
 
 class _PaymentTile extends StatelessWidget {
-  const _PaymentTile({required this.payment, required this.payments, required this.auth, this.showReceive = false});
+  const _PaymentTile({required this.payment, required this.payments, required this.auth, this.showReceive = false, this.ordering});
+
+  final OrderingController? ordering;
 
   final CustomerPayment payment;
   final PaymentsController payments;
@@ -112,6 +119,15 @@ class _PaymentTile extends StatelessWidget {
             const Text('Not signed — tap to confirm by phone call', style: TextStyle(color: Colors.orange)),
           const SizedBox(height: 4),
           PaymentStatusRow(payment: payment),
+          if (showReceive && auth.can(Permission.reconcileCash))
+            if (ordering?.orders.where((o) => o.id == payment.orderId && o.status == OrderStatus.delivered && o.invoiceId != null && o.shopCopyAt == null).firstOrNull
+                case final order?)
+              TextButton.icon(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                icon: const Icon(Icons.fact_check_outlined, size: 18),
+                label: const Text('Signed shop copy back'),
+                onPressed: () => runPaymentAction(context, () => ordering!.markShopCopyReceived(order, by: auth.currentUser!), success: 'Signed copy noted.'),
+              ),
         ],
       ),
       trailing: showReceive && auth.can(Permission.reconcileCash)

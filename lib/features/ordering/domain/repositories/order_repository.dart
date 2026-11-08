@@ -28,4 +28,7 @@ abstract class OrderRepository {
   void assign(CustomerOrder order, {required String? userId, required String userName});
 
   void setStatus(CustomerOrder order, OrderStatus status);
+
+  /// Saves changed fields (bill link, prepaid, shop copy).
+  void save(CustomerOrder order);
 }

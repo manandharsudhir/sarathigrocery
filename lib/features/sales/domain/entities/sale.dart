@@ -22,6 +22,8 @@ class Sale {
     this.invoiceSeq,
     this.exemptAmount = 0,
     this.buyerPan = '',
+    this.returnOf,
+    this.corrects,
   });
 
   final String id;
@@ -56,6 +58,17 @@ class Sale {
 
   /// The customer's PAN when billed.
   final String buyerPan;
+
+  /// Set on goods refused at the door or brought back to the counter: this
+  /// record is the returned part of bill [returnOf], as negative quantities
+  /// (so totals, stock, reports and postings net out). In a VAT shop it
+  /// carries a credit-note number.
+  final String? returnOf;
+  bool get isDoorReturn => returnOf != null;
+
+  /// The sale this one replaces (cancelled and entered again after a
+  /// mistake). Payments against that bill follow to this one.
+  final String? corrects;
 
   double get linesTotal => items.fold(0, (sum, i) => sum + i.lineTotal);
   double get total => linesTotal + (vatIncluded ? 0 : vatAmount);

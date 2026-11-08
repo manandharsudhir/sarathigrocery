@@ -254,6 +254,36 @@ describe('delivery and payment verification', () => {
     await assertSucceeds(deliverBatch(db(DELIVERY)).commit());
   });
 
+  test('dispatch billing: the bill link must be this order\'s bill; shop copy tick is cash staff only, after delivery', async () => {
+    const e = db(EMPLOYEE);
+    // Staff dispatch an order assigned to the delivery person, billing it.
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), p('orders/O4')),
+      { customerId: 'C1', status: 'ready', assignedToId: DELIVERY, assignedToName: 'delivery', updatedDate: 1 }));
+    const bad = writeBatch(e);
+    bad.set(doc(e, p('sales/OTHER')), { status: 'completed', customerId: 'C1', orderId: 'O1', total: 5000, isCredit: true });
+    bad.set(doc(e, p('orders/O4')), { status: 'outForDelivery', updatedDate: 2, invoiceId: 'OTHER', invoiceNumber: 'OTHER', prepaid: 0 }, { merge: true });
+    await assertFails(bad.commit(), 'a bill for another order');
+    const ok = writeBatch(e);
+    ok.set(doc(e, p('sales/INV4')), { status: 'completed', customerId: 'C1', orderId: 'O4', total: 5000, isCredit: true });
+    ok.set(doc(e, p('orders/O4')), { status: 'outForDelivery', updatedDate: 2, invoiceId: 'INV4', invoiceNumber: 'INV4', prepaid: 0 }, { merge: true });
+    await assertSucceeds(ok.commit());
+
+    // The delivery person records goods refused at the door against it.
+    const d = db(DELIVERY);
+    const back = writeBatch(d);
+    back.set(doc(d, p('sales/RET4')), { status: 'completed', customerId: 'C1', orderId: 'O4', returnOf: 'INV4', total: -2500, isCredit: true });
+    back.set(doc(d, p('orders/O4')), { status: 'delivered', updatedDate: 3, receivedSignature: '1,1 2,2', receivedBy: 'x' }, { merge: true });
+    await assertSucceeds(back.commit());
+
+    await assertFails(updateDoc(doc(e, p('orders/O4')), { shopCopyAt: 5, shopCopyByName: 'x' }), 'needs reconcileCash');
+    await assertFails(updateDoc(doc(db(CASHIER), p('orders/O4')), { shopCopyAt: 5, shopCopyByName: 'x', status: 'ready' }), 'only the tick');
+    await assertSucceeds(updateDoc(doc(db(CASHIER), p('orders/O4')), { shopCopyAt: 5, shopCopyByName: 'cashier' }));
+  });
+
+  test('paying for an order before delivery needs no signature', async () => {
+    await assertSucceeds(setDoc(doc(db(EMPLOYEE), p('customerPayments/PRE1')), payment({ orderId: 'O1' })));
+  });
+
   test('a delivery person can only deliver and collect for orders assigned to them', async () => {
     await assertFails(deliverBatch(db('someone-else')).commit());
     await assertFails(getDoc(doc(db(DELIVERY), p('orders/O1'))));
@@ -331,6 +361,60 @@ describe('delivery and payment verification', () => {
 
   test('opening balances are fixed', async () => {
     await assertFails(updateDoc(doc(db(OWNER), p('customers/C1')), { openingBalance: 0 }));
+  });
+});
+
+describe('corrections', () => {
+  beforeEach(seedBusiness);
+
+  const DAY = 86400000;
+  const seed = (path, data) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), p(path)), data));
+
+  test('a cash book line is undone exactly, once, by the owner or (same day) cash staff', async () => {
+    await seed('cashLedger/LT', { type: 'expense', amount: 500, account: 'cash', date: Date.now() });
+    await seed('cashLedger/LOLD', { type: 'expense', amount: 80, account: 'cash', date: Date.now() - 3 * DAY });
+    const undo = (extra = {}) => ({ type: 'expense', amount: -500, account: 'cash', reverses: 'LT', date: Date.now(), ...extra });
+    await assertFails(setDoc(doc(db(EMPLOYEE), p('cashLedger/rev-LT')), undo()), 'needs reconcileCash');
+    await assertFails(setDoc(doc(db(CASHIER), p('cashLedger/rev-LT')), undo({ amount: -50 })), 'must negate the amount exactly');
+    await assertFails(setDoc(doc(db(CASHIER), p('cashLedger/rev-LT')), undo({ account: 'bank' })), 'same account');
+    await assertFails(setDoc(doc(db(CASHIER), p('cashLedger/X')), undo()), 'fixed id');
+    await assertSucceeds(setDoc(doc(db(CASHIER), p('cashLedger/rev-LT')), undo()));
+    await assertFails(setDoc(doc(db(OWNER), p('cashLedger/rev-LT')), undo()), 'never twice');
+    const old = { type: 'expense', amount: -80, account: 'cash', reverses: 'LOLD', date: Date.now() };
+    await assertFails(setDoc(doc(db(CASHIER), p('cashLedger/rev-LOLD')), old), 'older entries are the owner\'s');
+    await assertSucceeds(setDoc(doc(db(OWNER), p('cashLedger/rev-LOLD')), old));
+  });
+
+  test('a purchase is marked reversed once, with a reason, and never edited', async () => {
+    await seed('purchases/PU1', { supplierId: 'X', date: Date.now() - 3 * DAY, paidAmount: 0 });
+    const mark = { reversedAt: Date.now(), reversedByName: 'x', reversalReason: 'entered twice' };
+    await assertFails(updateDoc(doc(db(CASHIER), p('purchases/PU1')), mark), 'older purchases are the owner\'s');
+    await assertFails(updateDoc(doc(db(OWNER), p('purchases/PU1')), { ...mark, reversalReason: '' }), 'reason required');
+    await assertFails(updateDoc(doc(db(OWNER), p('purchases/PU1')), { ...mark, paidAmount: 5 }), 'nothing else changes');
+    await assertSucceeds(updateDoc(doc(db(OWNER), p('purchases/PU1')), mark));
+    await assertFails(updateDoc(doc(db(OWNER), p('purchases/PU1')), { ...mark, reversalReason: 'again' }), 'once');
+  });
+
+  test('items returned at the counter and corrected sales need the right to cancel sales', async () => {
+    const ret = { status: 'completed', customerId: 'C1', returnOf: 'S1', total: -100, isCredit: true };
+    await assertFails(setDoc(doc(db(EMPLOYEE), p('sales/R1')), ret));
+    await assertSucceeds(setDoc(doc(db(OWNER), p('sales/R1')), ret));
+
+    const fix = { status: 'completed', customerId: 'C1', corrects: 'S1', total: 100, isCredit: true };
+    await assertFails(setDoc(doc(db(OWNER), p('sales/S9')), fix), 'the corrected sale must be cancelled in the same batch');
+    const o = db(OWNER);
+    const ok = writeBatch(o);
+    ok.update(doc(o, p('sales/S1')), { status: 'cancelled' });
+    ok.set(doc(o, p('sales/S9')), fix);
+    await assertSucceeds(ok.commit());
+  });
+
+  test('only the owner sets the corrections alert level', async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      updateDoc(doc(ctx.firestore(), p(`users/${EMPLOYEE}`)), { customPermissions: ['manageSettings'] }));
+    await assertSucceeds(updateDoc(doc(db(EMPLOYEE), p('settings/business')), { businessName: 'Renamed' }));
+    await assertFails(updateDoc(doc(db(EMPLOYEE), p('settings/business')), { correctionAlert: 99 }));
+    await assertSucceeds(updateDoc(doc(db(OWNER), p('settings/business')), { correctionAlert: 3 }));
   });
 });
 

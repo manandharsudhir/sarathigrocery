@@ -28,8 +28,9 @@ class InvoiceScreen extends StatelessWidget {
   Widget _build(BuildContext context) {
     final seller = sales.seller;
     final paid = creditNote == null ? sales.paidOn(sale) : null;
-    final canCollect = paid != null && sale.total - paid > 0.005 && (auth?.can(Permission.recordPayments) ?? false);
-    final c = billContent(sale, seller, creditNote: creditNote, paid: paid);
+    final canCollect = paid != null && sale.total - sales.returnedOn(sale) - paid > 0.005 && (auth?.can(Permission.recordPayments) ?? false);
+    final returned = creditNote == null ? sales.returnedOn(sale) : 0.0;
+    final c = billContent(sale, seller, creditNote: creditNote, paid: paid, returned: returned);
     return Scaffold(
       floatingActionButton: canCollect
           ? FloatingActionButton.extended(heroTag: null, icon: const Icon(Icons.payments_outlined), label: const Text('Collect'), onPressed: () => collectOnBill(context, sale, sales, auth!))
@@ -40,7 +41,7 @@ class InvoiceScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Share PDF',
             icon: const Icon(Icons.share),
-            onPressed: () async => sharePdf(await billPdf(sale, seller, creditNote: creditNote, paid: paid), billFileName(sale, creditNote)),
+            onPressed: () async => sharePdf(await billPdf(sale, seller, creditNote: creditNote, paid: paid, returned: returned), billFileName(sale, creditNote)),
           ),
         ],
       ),

@@ -31,6 +31,7 @@ class _BusinessSettingsScreenState extends State<BusinessSettingsScreen> {
   late final _tax = TextEditingController(text: widget.controller.current.taxPercent > 0 ? formatQty(widget.controller.current.taxPercent) : '13');
   late final _pan = TextEditingController(text: widget.controller.current.panNumber);
   late final _margin = TextEditingController(text: formatQty(widget.controller.current.marginPercent));
+  late final _correctionAlert = TextEditingController(text: '${widget.controller.current.correctionAlert}');
   late bool _vatRegistered = widget.controller.current.vatRegistered;
   late bool _pricesIncludeVat = widget.controller.current.pricesIncludeVat;
   late final _currency = TextEditingController(text: widget.controller.current.currency);
@@ -72,6 +73,14 @@ class _BusinessSettingsScreenState extends State<BusinessSettingsScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(labelText: 'Default margin %', helperText: 'Purchases suggest minimum selling prices at cost + this %'),
           ),
+          if (widget.auth.currentUser?.role == UserRole.owner) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _correctionAlert,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Corrections alert (per person per week)', helperText: 'More reversals or corrections than this shows in Needs Attention'),
+            ),
+          ],
           const SizedBox(height: 24),
           FilledButton(
             onPressed: () {
@@ -86,6 +95,10 @@ class _BusinessSettingsScreenState extends State<BusinessSettingsScreen> {
               );
               final margin = double.tryParse(_margin.text) ?? 0;
               if (margin != widget.controller.current.marginPercent) widget.controller.setMargin(margin);
+              final alert = int.tryParse(_correctionAlert.text);
+              if (widget.auth.currentUser?.role == UserRole.owner && alert != null && alert != widget.controller.current.correctionAlert) {
+                widget.controller.setCorrectionAlert(alert);
+              }
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings saved')));
             },
             child: const Text('Save Settings'),

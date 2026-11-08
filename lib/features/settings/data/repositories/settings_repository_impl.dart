@@ -26,6 +26,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
       'panNumber': s.panNumber,
       'pricesIncludeVat': s.pricesIncludeVat,
       'marginPercent': s.marginPercent,
+      'correctionAlert': s.correctionAlert,
     },
     fromJson: (j) => BusinessSettings(
       businessName: j['businessName'] ?? '',
@@ -45,6 +46,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
       panNumber: j['panNumber'] ?? '',
       pricesIncludeVat: j['pricesIncludeVat'] ?? true,
       marginPercent: toDouble(j['marginPercent']),
+      correctionAlert: j['correctionAlert'] == null ? 5 : toInt(j['correctionAlert']),
     ),
     merge: (s, j) => s
       ..businessName = j['businessName'] ?? ''
@@ -63,7 +65,8 @@ class SettingsRepositoryImpl implements SettingsRepository {
       ..vatRegistered = j['vatRegistered'] ?? false
       ..panNumber = j['panNumber'] ?? ''
       ..pricesIncludeVat = j['pricesIncludeVat'] ?? true
-      ..marginPercent = toDouble(j['marginPercent']),
+      ..marginPercent = toDouble(j['marginPercent'])
+      ..correctionAlert = j['correctionAlert'] == null ? 5 : toInt(j['correctionAlert']),
   );
 
   List<SyncedCollection<Object?>> get collections => [_settings];
@@ -103,7 +106,8 @@ class SettingsRepositoryImpl implements SettingsRepository {
         ..vatRegistered = settings.vatRegistered
         ..panNumber = settings.panNumber
         ..pricesIncludeVat = settings.pricesIncludeVat
-        ..marginPercent = settings.marginPercent;
+        ..marginPercent = settings.marginPercent
+        ..correctionAlert = settings.correctionAlert;
       _settings.save(existing);
     }
   }

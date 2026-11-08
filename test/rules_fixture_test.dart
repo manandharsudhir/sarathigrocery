@@ -15,6 +15,7 @@ import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/auth_repository.dart';
 import 'package:sarathigrocery/core/utils/bs_date.dart';
 import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
+import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product_pack.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/delivery_type.dart';
@@ -226,10 +227,33 @@ void main() {
       owner.ordering.advanceOrderStatus(oPhone, st, userName: o.name, userId: o.id);
     }
     await pumpEventQueue();
-    final dPhone = delivery.ordering.orders.firstWhere((x) => x.id == phoneOrder.id);
-    delivery.ordering.advanceOrderStatus(dPhone, OrderStatus.outForDelivery, userName: d.name, userId: d.id);
+    // Paid in part before it goes out (no signature: not at the door), then
+    // staff dispatch and bill it while it's assigned to the delivery person;
+    // the customer refuses half at the door.
+    final ePhone = employee.ordering.orders.firstWhere((x) => x.id == phoneOrder.id);
+    employee.ordering.prepay(ePhone, 1000, method: PaymentMethod.wallet, reference: 'ESEWA-PRE', collector: e);
     await pumpEventQueue();
-    await delivery.ordering.deliverAndCollect(dPhone, amount: 2000, method: PaymentMethod.cash, signature: signature, signedName: 'Shyam', collector: d);
+    await employee.ordering.dispatch(ePhone, by: e);
+    await pumpEventQueue();
+    final dPhone = delivery.ordering.orders.firstWhere((x) => x.id == phoneOrder.id);
+    await delivery.ordering.deliverAndCollect(dPhone, amount: 2000, method: PaymentMethod.cash, signature: signature, signedName: 'Shyam', refused: {0: 0.5}, collector: d);
+    await pumpEventQueue();
+    cashier.ordering.markShopCopyReceived(cashier.ordering.orders.firstWhere((x) => x.id == phoneOrder.id), by: a);
+    await pumpEventQueue();
+
+    // Billed at dispatch but not delivered: the owner cancels the bill and
+    // it goes out again with a new one.
+    final back = employee.ordering.placeOrderFor(employee.customers.customers.firstWhere((c) => c.id == walkIn.id), atMinimum({employee.inventory.products.firstWhere((p) => p.name == 'Ghee'): 1}),
+        deliveryType: DeliveryType.delivery, address: 'Kalanki', staff: e)!;
+    await pumpEventQueue();
+    final oBack = owner.ordering.orders.firstWhere((x) => x.id == back.id);
+    owner.ordering.assign(oBack, owner.ordering.deliverers.firstWhere((u) => u.role == UserRole.delivery), by: o);
+    await owner.ordering.dispatch(oBack, by: o);
+    await pumpEventQueue();
+    await owner.ordering.notDelivered(oBack, 'customer away', by: o);
+    await pumpEventQueue();
+    await owner.ordering.dispatch(oBack, by: o);
+    await pumpEventQueue();
     final eWalkIn = employee.customers.customers.firstWhere((c) => c.id == walkIn.id);
     employee.payments.record(eWalkIn, 400, method: PaymentMethod.cash, collector: e);
     employee.payments.record(eWalkIn, 600, method: PaymentMethod.cash, collector: e);
@@ -288,6 +312,39 @@ void main() {
       supplierBillDate: DateTime.now(),
     );
     owner.cash.vatPaid(1000, 702, 'cash', 'test month', userName: o.name);
+    await pumpEventQueue();
+
+    // Corrections (VAT shop): a tax invoice corrected (credit note + new
+    // invoice), items brought back to the counter, a purchase reversed and
+    // one corrected, a supplier payment, an owner's and a cashier's money
+    // entry reversed, and the owner's corrections alert level.
+    final wrongSale = await owner.sales.sell(items: [SaleItem(product: owner.inventory.products.firstWhere((p) => p.name == 'Ghee'), qty: 2, unitPrice: 5100)], isCredit: false, userName: o.name, userId: o.id);
+    await pumpEventQueue();
+    final rightSale = await owner.sales.sell(
+        items: [SaleItem(product: owner.inventory.products.firstWhere((p) => p.name == 'Ghee'), qty: 1, unitPrice: 5100), SaleItem(product: vatRice, qty: 2, unitPrice: vatRice.unitPrice)],
+        isCredit: true, customer: owner.customers.customers.firstWhere((c) => c.id == gurung.id), userName: o.name, userId: o.id, corrects: wrongSale, reason: 'wrong customer');
+    await pumpEventQueue();
+    await owner.sales.returnItems(rightSale, {1: 1}, 'damaged pack', userName: o.name, userId: o.id);
+    await pumpEventQueue();
+    final sup = owner.suppliers.suppliers.first;
+    final dupe = owner.purchasing.createPurchase(supplier: sup, items: [PurchaseItem(product: owner.inventory.products.first, qty: 3, unitCost: 2700)], paidAmount: 1000, userName: o.name, supplierBillNo: 'RT-56');
+    final typo = owner.purchasing.createPurchase(supplier: sup, items: [PurchaseItem(product: owner.inventory.products.first, qty: 1, unitCost: 2700)], userName: o.name, supplierBillNo: 'RT-57');
+    await pumpEventQueue();
+    owner.purchasing.reversePurchase(dupe, 'entered twice', userName: o.name, owner: true);
+    await pumpEventQueue();
+    owner.purchasing.correctPurchase(typo, 'qty 10 not 1', supplier: sup, items: [PurchaseItem(product: owner.inventory.products.first, qty: 10, unitCost: 2700)], userName: o.name, owner: true, supplierBillNo: 'RT-57');
+    await pumpEventQueue();
+    owner.suppliers.recordPayment(sup, 500, '', userName: o.name);
+    await pumpEventQueue();
+    owner.suppliers.reversePayment(sup, owner.suppliers.paymentsTo(sup).first, 'paid the other supplier', userName: o.name, owner: true);
+    owner.cash.transfer(Acc.cash, Acc.bank, 300, '', userName: o.name);
+    await pumpEventQueue();
+    owner.cash.reverseEntry(owner.cash.ledger.lastWhere((x) => x.type == CashEntryType.moneyOut && !x.isReversal), 'wrong account', userName: o.name, owner: true);
+    await pumpEventQueue();
+    cashier.cash.addExpense('Tea', 80, '', createdByName: a.name);
+    await pumpEventQueue();
+    cashier.cash.reverseEntry(cashier.cash.lineOf(cashier.cash.expenses.last)!, 'entered twice', userName: a.name, owner: false);
+    owner.settings.setCorrectionAlert(3);
     await pumpEventQueue();
 
     // Staff admin, notifications.

@@ -96,7 +96,7 @@ DailySummary dailySummary({
     } else {
       day.cashSales += s.total;
     }
-    if (s.orderId != null) day.ordersDelivered++;
+    if (s.orderId != null && !s.isDoorReturn) day.ordersDelivered++;
   }
   for (final p in payments) {
     if (!p.isReversed) byDay[_day(p.date)]?.collections += p.amount;

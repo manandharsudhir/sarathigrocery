@@ -11,6 +11,8 @@ class CashLedgerEntry {
     required this.note,
     this.reference = '',
     this.account = 'cash',
+    this.journalId = '',
+    this.reverses,
   });
 
   final String id;
@@ -20,6 +22,15 @@ class CashLedgerEntry {
   final String note;
   final String reference;
   final String account;
+
+  /// The journal entry this line was booked with ('' on lines from before
+  /// the link existed: [CashRepository.journalFor] finds those by match).
+  final String journalId;
+
+  /// Set on a correction: this line undoes line [reverses] (same type,
+  /// negative amount, so every total nets out by itself).
+  final String? reverses;
+  bool get isReversal => reverses != null;
 
   bool get isOutflow => switch (type) {
         CashEntryType.expense || CashEntryType.supplierPayment || CashEntryType.refund || CashEntryType.moneyOut => true,

@@ -9,7 +9,16 @@ class CashRepositoryImpl implements CashRepository {
   final _ledger = SyncedCollection<CashLedgerEntry>(
     'cashLedger',
     idOf: (e) => e.id,
-    toJson: (e) => {'date': toMillis(e.date), 'type': e.type.name, 'amount': e.amount, 'note': e.note, 'reference': e.reference, 'account': e.account},
+    toJson: (e) => {
+      'date': toMillis(e.date),
+      'type': e.type.name,
+      'amount': e.amount,
+      'note': e.note,
+      'reference': e.reference,
+      'account': e.account,
+      if (e.journalId.isNotEmpty) 'journalId': e.journalId,
+      if (e.reverses != null) 'reverses': e.reverses,
+    },
     fromJson: (j) => CashLedgerEntry(
       id: j['id'],
       date: fromMillis(j['date']),
@@ -18,6 +27,8 @@ class CashRepositoryImpl implements CashRepository {
       note: j['note'] ?? '',
       reference: j['reference'] ?? '',
       account: j['account'] ?? 'cash',
+      journalId: j['journalId'] ?? '',
+      reverses: j['reverses'],
     ),
   );
 
@@ -34,7 +45,34 @@ class CashRepositoryImpl implements CashRepository {
   List<CashLedgerEntry> get ledger => _ledger.items;
 
   @override
-  List<Expense> get expenses => _expenses.items;
+  List<Expense> get allExpenses => _expenses.items;
+
+  @override
+  List<Expense> get expenses => [
+        for (final e in allExpenses)
+          if (!_isReversed(e)) e,
+      ];
+
+  bool _isReversed(Expense e) {
+    final line = lineOf(e);
+    return line != null && reversalOf(line) != null;
+  }
+
+  @override
+  CashLedgerEntry? reversalOf(CashLedgerEntry line) => _ledger.byId('rev-${line.id}');
+
+  @override
+  CashLedgerEntry? lineOf(Expense expense) {
+    // Linked by reference since the reversal feature; older expenses are
+    // matched by amount and time (written in the same instant).
+    for (final l in ledger) {
+      if (l.type == CashEntryType.expense && !l.isReversal && l.reference == expense.id) return l;
+    }
+    for (final l in ledger) {
+      if (l.type == CashEntryType.expense && !l.isReversal && l.reference.isEmpty && l.amount == expense.amount && l.date.difference(expense.date).inSeconds.abs() <= 60) return l;
+    }
+    return null;
+  }
 
   @override
   double get cashInHand => balanceOf('cash');
@@ -54,13 +92,19 @@ class CashRepositoryImpl implements CashRepository {
   double get totalExpensesAllTime => expenses.fold(0.0, (sum, e) => sum + e.amount);
 
   @override
-  void addLedgerEntry({required CashEntryType type, required double amount, required String note, String reference = '', String account = 'cash'}) {
-    _ledger.add(CashLedgerEntry(id: nextId('L'), date: DateTime.now(), type: type, amount: amount, note: note, reference: reference, account: account));
+  CashLedgerEntry addLedgerEntry(
+      {required CashEntryType type, required double amount, required String note, String reference = '', String account = 'cash', String journalId = '', String? reverses, String? id}) {
+    final entry = CashLedgerEntry(
+        id: id ?? nextId('L'), date: DateTime.now(), type: type, amount: amount, note: note, reference: reference, account: account, journalId: journalId, reverses: reverses);
+    _ledger.add(entry);
+    return entry;
   }
 
   @override
-  void addExpense(String category, double amount, String note, {String createdByName = '', String account = 'cash'}) {
-    _expenses.add(Expense(id: nextId('E'), date: DateTime.now(), category: category, amount: amount, note: note, createdByName: createdByName));
-    addLedgerEntry(type: CashEntryType.expense, amount: amount, note: '$category${note.isEmpty ? '' : ' - $note'}', account: account);
+  Expense addExpense(String category, double amount, String note, {String createdByName = '', String account = 'cash', String journalId = ''}) {
+    final expense = Expense(id: nextId('E'), date: DateTime.now(), category: category, amount: amount, note: note, createdByName: createdByName);
+    _expenses.add(expense);
+    addLedgerEntry(type: CashEntryType.expense, amount: amount, note: '$category${note.isEmpty ? '' : ' - $note'}', account: account, reference: expense.id, journalId: journalId);
+    return expense;
   }
 }

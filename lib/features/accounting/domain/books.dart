@@ -36,6 +36,24 @@ class Books {
 
   List<JournalEntry> get entries => _journal.entries;
 
+  JournalEntry? byId(String id) => _journal.byId(id);
+
+  /// Kinds only an owner may post (mirrors firestore.rules), so only an
+  /// owner may reverse them too.
+  static const ownerKinds = {'capital', 'drawing', 'drawingReturn', 'loan', 'loanRepaid', 'dividend', 'manual', 'opening', 'close'};
+
+  /// A correction: [original] posted again with every line negated, dated
+  /// today, same kind (so the same people may post it). The id makes a
+  /// second reversal impossible.
+  JournalEntry? reverse(JournalEntry original, String reason, {String by = ''}) => post(
+        original.kind,
+        'Reversed: ${original.memo}${reason.isEmpty ? '' : ' – $reason'}',
+        {for (final l in original.lines.entries) l.key: -l.value},
+        reference: original.id,
+        id: 'rev-${original.id}',
+        by: by,
+      );
+
   static double _round(double v) => (v * 100).roundToDouble() / 100;
 
   /// Posts [lines] (account → amount, + debit / − credit). Zero lines are
@@ -128,12 +146,24 @@ class Books {
     );
   }
 
+  /// A purchase entered by mistake, taken back out whole.
+  void purchaseReversed(Purchase p, String reason, {String by = ''}) {
+    final original = _journal.byId('purchase-${p.id}');
+    if (original != null) reverse(original, reason, by: by);
+  }
+
+  /// Stock value moved by [value] with no goods moving (a reversed
+  /// purchase whose cost was already partly sold through).
+  void stockValueChanged(Product p, double value, String why, {String by = ''}) {
+    post('stockRevalued', '$why: ${p.name}', {Acc.stock: value, Acc.stockLoss: -value}, reference: p.id, by: by);
+  }
+
   void purchaseReturn(PurchaseReturn r, {String by = ''}) {
     post('purchaseReturn', 'Returned ${r.product.name} to ${r.supplier.name}', {Acc.payables: r.total, Acc.stock: -r.total}, reference: r.id, id: 'preturn-${r.id}', by: by);
   }
 
-  void supplierPaid(String supplierId, String supplierName, double amount, String account, {String by = ''}) {
-    post('supplierPayment', 'Paid \$supplierName', {Acc.payables: amount, account: -amount}, reference: supplierId, by: by);
+  JournalEntry? supplierPaid(String supplierId, String supplierName, double amount, String account, {String by = ''}) {
+    return post('supplierPayment', 'Paid $supplierName', {Acc.payables: amount, account: -amount}, reference: supplierId, by: by);
   }
 
   /// Stock that left (−) or came back (+) without a sale: damaged,
@@ -193,56 +223,56 @@ class Books {
 
   // ---- Money
 
-  void expense(String category, double amount, String account, String note, {String by = ''}) {
-    post('expense', '$category${note.isEmpty ? '' : ' – $note'}', {Acc.expense(category): amount, account: -amount}, by: by);
+  JournalEntry? expense(String category, double amount, String account, String note, {String by = ''}) {
+    return post('expense', '$category${note.isEmpty ? '' : ' – $note'}', {Acc.expense(category): amount, account: -amount}, by: by);
   }
 
   /// Paid out, for the accountant to classify later (equipment, deposits, ...).
-  void toClassify(double amount, String account, String note, {String by = ''}) {
-    post('toClassify', note, {Acc.toClassify: amount, account: -amount}, by: by);
+  JournalEntry? toClassify(double amount, String account, String note, {String by = ''}) {
+    return post('toClassify', note, {Acc.toClassify: amount, account: -amount}, by: by);
   }
 
-  void transfer(String from, String to, double amount, String note, {String by = ''}) {
-    post('transfer', note.isEmpty ? '${accountName(from)} → ${accountName(to)}' : note, {to: amount, from: -amount}, by: by);
+  JournalEntry? transfer(String from, String to, double amount, String note, {String by = ''}) {
+    return post('transfer', note.isEmpty ? '${accountName(from)} → ${accountName(to)}' : note, {to: amount, from: -amount}, by: by);
   }
 
-  void capitalIn(String person, double amount, String account, {String by = ''}) =>
+  JournalEntry? capitalIn(String person, double amount, String account, {String by = ''}) =>
       post('capital', 'Capital put in by $person', {account: amount, Acc.capital(person): -amount}, by: by);
 
-  void drawing(String person, double amount, String account, String note, {String by = ''}) =>
+  JournalEntry? drawing(String person, double amount, String account, String note, {String by = ''}) =>
       post('drawing', 'Taken out by $person${note.isEmpty ? '' : ' – $note'}', {Acc.drawings(person): amount, account: -amount}, by: by);
 
   /// An owner paying back money taken as drawings; capped at what they
   /// have drawn (more than that is new capital).
-  void drawingReturned(String person, double amount, String account, String note, {String by = ''}) {
+  JournalEntry? drawingReturned(String person, double amount, String account, String note, {String by = ''}) {
     final drawn = _round(entries.fold(0.0, (s, e) => s + (e.lines[Acc.drawings(person)] ?? 0)));
     if (amount > drawn) {
       throw AccountingException(drawn <= 0
           ? '$person has no drawings to return. Record it as Capital put in.'
           : '$person has drawn ${formatNpr(drawn)}. Record the rest as Capital put in.');
     }
-    post('drawingReturn', 'Returned by $person${note.isEmpty ? '' : ' – $note'}', {account: amount, Acc.drawings(person): -amount}, by: by);
+    return post('drawingReturn', 'Returned by $person${note.isEmpty ? '' : ' – $note'}', {account: amount, Acc.drawings(person): -amount}, by: by);
   }
 
-  void loanReceived(String lender, double amount, String account, {String by = ''}) =>
+  JournalEntry? loanReceived(String lender, double amount, String account, {String by = ''}) =>
       post('loan', 'Loan from $lender', {account: amount, Acc.loan(lender): -amount}, by: by);
 
-  void loanRepaid(String lender, double amount, String account, {String by = ''}) =>
+  JournalEntry? loanRepaid(String lender, double amount, String account, {String by = ''}) =>
       post('loanRepaid', 'Repaid to $lender', {Acc.loan(lender): amount, account: -amount}, by: by);
 
   /// A dividend paid out of retained earnings, shared by ownership.
-  void dividend(double amount, String account, {String by = ''}) {
+  JournalEntry? dividend(double amount, String account, {String by = ''}) {
     final owners = _settings().owners;
     final split = owners.isEmpty ? '' : ' (${[for (final o in owners) '${o.name} ${formatNpr(amount * o.percent / 100)}'].join(', ')})';
-    post('dividend', 'Dividend$split', {Acc.dividends: amount, account: -amount}, by: by);
+    return post('dividend', 'Dividend$split', {Acc.dividends: amount, account: -amount}, by: by);
   }
 
   /// VAT return for a period: VAT collected ([output]) set against VAT paid
   /// on purchases ([input]); the difference is paid to IRD from [account].
   /// If input exceeds output, only output is offset; the rest carries on.
-  void vatSettled(double output, double input, String account, String period, {String by = ''}) {
+  JournalEntry? vatSettled(double output, double input, String account, String period, {String by = ''}) {
     final offset = input < output ? input : output;
-    post('vatPayment', 'VAT for $period', {Acc.vatPayable: output, Acc.vatInput: -offset, account: -(output - offset)}, by: by);
+    return post('vatPayment', 'VAT for $period', {Acc.vatPayable: output, Acc.vatInput: -offset, account: -(output - offset)}, by: by);
   }
 
   /// Opening balances: what the business owns and owes on [date]; the

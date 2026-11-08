@@ -229,7 +229,7 @@ service cloud.firestore {
         // registration are the owner's; a closed year never reopens.
         allow update: if can('manageSettings')
           && (isOwner() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(
-            ['safeguards', 'owners', 'moneyAccounts', 'expenseCategories', 'closedThrough', 'vatRegistered', 'panNumber', 'pricesIncludeVat', 'taxPercent']))
+            ['safeguards', 'owners', 'moneyAccounts', 'expenseCategories', 'closedThrough', 'vatRegistered', 'panNumber', 'pricesIncludeVat', 'taxPercent', 'correctionAlert']))
           && closedOf(request.resource.data) >= closedOf(resource.data);
         allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
       }
@@ -288,9 +288,20 @@ service cloud.firestore {
         allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
       }
 
+      // Corrections: the owner any time; cash staff only what was entered
+      // within the last day (the app says "today").
+      function mayCorrect(dateMillis) {
+        return isOwner() || (can('reconcileCash') && dateMillis > request.time.toMillis() - 86400000);
+      }
+
       match /purchases/{id} {
         allow read: if staff();
         allow create: if can('createPurchases');
+        // A purchase entered by mistake is marked reversed (once), never edited.
+        allow update: if resource.data.get('reversedAt', null) == null
+          && changedOnly(['reversedAt', 'reversedByName', 'reversalReason'])
+          && request.resource.data.reversalReason is string && request.resource.data.reversalReason.size() > 0
+          && mayCorrect(resource.data.date);
         allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
       }
 
@@ -302,14 +313,25 @@ service cloud.firestore {
 
       match /sales/{id} {
         allow read: if staff();
-        // A VAT shop's every sale is a numbered tax invoice.
+        // A VAT shop's every sale is a numbered tax invoice; goods refused at
+        // the door (returnOf: the bill) carry a credit-note number instead.
         allow create: if request.resource.data.status == 'completed'
-          && (!vatShop() || takesNumber(request.resource.data.get('invoiceSeries', null), request.resource.data.get('invoiceSeq', null), 'invoice'))
+          && (!vatShop() || (request.resource.data.get('returnOf', null) == null
+              ? takesNumber(request.resource.data.get('invoiceSeries', null), request.resource.data.get('invoiceSeq', null), 'invoice')
+              : takesNumber(request.resource.data.get('invoiceSeries', null), request.resource.data.get('invoiceSeq', null), 'credit')))
+          // Items brought back to the counter, and a sale entered again to
+          // correct one, are reversals: the people who may cancel sales.
+          && ((request.resource.data.get('returnOf', null) == null || request.resource.data.get('orderId', null) is string)
+            || can('cancelSales') || can('editSales'))
+          && (request.resource.data.get('corrects', null) == null
+            || ((can('cancelSales') || can('editSales'))
+              && getAfter(salePath(request.resource.data.corrects)).data.status == 'cancelled'))
           && (can('createSales')
-          // The invoice for an order, raised by whoever delivers it.
+          // The bill for an order (issued at dispatch, or on delivery for older
+          // orders), and goods refused at the door, by whoever delivers it.
           || (deliverer() && request.resource.data.get('orderId', null) is string
             && assignedToMe(getAfter(orderPath(request.resource.data.orderId)).data)
-            && getAfter(orderPath(request.resource.data.orderId)).data.status == 'delivered'));
+            && getAfter(orderPath(request.resource.data.orderId)).data.status in ['outForDelivery', 'delivered']));
         allow update: if (can('cancelSales') || can('editSales'))
           && changedOnly(['status', 'flaggedForApproval'])
           && resource.data.status == 'completed';
@@ -326,11 +348,19 @@ service cloud.firestore {
       // Append-only money records.
       match /cashLedger/{id} {
         allow read: if staff();
-        allow create: if staff()
+        // A correction undoes one line exactly (same type, account, negated
+        // amount) under a fixed id, so nothing is reversed twice.
+        function undoesExactly(id, line) {
+          let original = get(/databases/$(database)/documents/shops/$(shopId)/cashLedger/$(line.reverses)).data;
+          return id == 'rev-' + line.reverses && line.type == original.type && line.account == original.account
+            && line.amount == -original.amount && mayCorrect(original.date);
+        }
+        allow create: if (request.resource.data.get('reverses', null) == null || undoesExactly(id, request.resource.data))
+          && (staff()
           // Without the handover safeguard, delivery staff count their own
           // collection in as they record it.
           || (deliverer() && !guarded('handover') && request.resource.data.type == 'collection'
-            && ownSettlement(request.resource.data.reference, request.resource.data.amount));
+            && ownSettlement(request.resource.data.reference, request.resource.data.amount)));
         allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
       }
 
@@ -370,10 +400,18 @@ service cloud.firestore {
           // Signature safeguard: a delivery carries the customer's signature.
           && (request.resource.data.status != 'delivered' || !guarded('signature')
             || request.resource.data.get('receivedSignature', null) is string) && (
-          (staff() && changedOnly(['status', 'updatedDate', 'assignedToId', 'assignedToName', 'receivedSignature', 'receivedBy']))
+          // The bill link may only point at this order's bill (set at dispatch,
+          // cleared when it comes back undelivered).
+          (request.resource.data.get('invoiceId', null) == null
+            || request.resource.data.invoiceId == resource.data.get('invoiceId', null)
+            || getAfter(salePath(request.resource.data.invoiceId)).data.orderId == orderId) && (
+          (staff() && changedOnly(['status', 'updatedDate', 'assignedToId', 'assignedToName', 'receivedSignature', 'receivedBy', 'invoiceId', 'invoiceNumber', 'prepaid']))
           // The assigned deliverer only takes it out and delivers it.
-          || (deliverer() && assignedToMe(resource.data) && changedOnly(['status', 'updatedDate', 'receivedSignature', 'receivedBy'])
-            && request.resource.data.status in ['outForDelivery', 'delivered']));
+          || (deliverer() && assignedToMe(resource.data) && changedOnly(['status', 'updatedDate', 'receivedSignature', 'receivedBy', 'invoiceId', 'invoiceNumber', 'prepaid'])
+            && request.resource.data.status in ['outForDelivery', 'delivered'])))
+          // The customer-signed shop copy of the bill is back (cash staff).
+          || (resource.data.status == 'delivered' && can('reconcileCash')
+            && changedOnly(['shopCopyAt', 'shopCopyByName']) && request.resource.data.shopCopyByName is string);
         allow delete: if isFounder(); // own shop's reset only (Settings → Danger zone)
       }
 
@@ -386,9 +424,11 @@ service cloud.firestore {
           // Unsigned payments skip the phone check only while that safeguard is off.
           && (request.resource.data.get('autoConfirmed', false) == false
             || (request.resource.data.autoConfirmed == true && !guarded('phoneConfirm')))
-          // Signature safeguard: money collected at the door is signed for.
+          // Signature safeguard: money collected at the door is signed for
+          // (paying for an order before it's delivered isn't at the door).
           && (request.resource.data.orderId == null || !guarded('signature')
-            || request.resource.data.get('signature', null) is string)
+            || request.resource.data.get('signature', null) is string
+            || getAfter(orderPath(request.resource.data.orderId)).data.status != 'delivered')
           && request.resource.data.disputedAt == null
           && request.resource.data.reversedAt == null
           && (can('recordPayments') || (deliverer() && request.resource.data.orderId is string

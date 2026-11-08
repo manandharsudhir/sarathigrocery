@@ -54,6 +54,7 @@ class BusinessSettings {
     this.panNumber = '',
     this.pricesIncludeVat = true,
     this.marginPercent = 0,
+    this.correctionAlert = 5,
   })  : features = features ?? {},
         safeguards = safeguards ?? {};
 
@@ -104,6 +105,10 @@ class BusinessSettings {
   /// Margin a purchase suggests minimum prices at (cost + this %); 0 = none.
   double marginPercent;
 
+  /// Needs Attention flags anyone who reverses or corrects more than this
+  /// many entries in a week (owner only).
+  int correctionAlert;
+
   /// A copy with some fields changed; everything else carried over (so a
   /// save never drops fields it didn't mean to touch).
   BusinessSettings copyWith({
@@ -120,6 +125,7 @@ class BusinessSettings {
     String? panNumber,
     bool? pricesIncludeVat,
     double? marginPercent,
+    int? correctionAlert,
   }) =>
       BusinessSettings(
         businessName: businessName ?? this.businessName,
@@ -138,6 +144,7 @@ class BusinessSettings {
         vatRegistered: vatRegistered ?? this.vatRegistered,
         panNumber: panNumber ?? this.panNumber,
         pricesIncludeVat: pricesIncludeVat ?? this.pricesIncludeVat,
+        correctionAlert: correctionAlert ?? this.correctionAlert,
         marginPercent: marginPercent ?? this.marginPercent,
       );
 }

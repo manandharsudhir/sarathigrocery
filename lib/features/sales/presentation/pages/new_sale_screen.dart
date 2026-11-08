@@ -17,14 +17,20 @@ import 'package:sarathigrocery/features/sales/presentation/controllers/sales_con
 import 'package:sarathigrocery/features/sales/presentation/pages/invoice_screen.dart';
 import 'package:sarathigrocery/features/accounting/domain/books.dart';
 import 'package:sarathigrocery/features/sales/presentation/widgets/cart_editor.dart';
+import 'package:sarathigrocery/core/widgets/correction_dialogs.dart';
+import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
 
 class NewSaleScreen extends StatefulWidget {
-  const NewSaleScreen({super.key, required this.sales, required this.inventory, required this.customers, required this.auth});
+  const NewSaleScreen({super.key, required this.sales, required this.inventory, required this.customers, required this.auth, this.corrects});
 
   final SalesController sales;
   final InventoryController inventory;
   final CustomersController customers;
   final AuthController auth;
+
+  /// Correcting this sale: the form starts as it was, and saving cancels it
+  /// and records this one in its place.
+  final Sale? corrects;
 
   @override
   State<NewSaleScreen> createState() => _NewSaleScreenState();
@@ -53,6 +59,25 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   bool get _partPaid => _isCredit && (_paidNow ?? 0) > 0;
 
   @override
+  void initState() {
+    super.initState();
+    final old = widget.corrects;
+    if (old == null) return;
+    _customer = old.customer;
+    _account = old.account;
+    // Payments already made on the old bill move to the new one.
+    if (old.isCredit) _paid.text = '0';
+    for (final i in old.items) {
+      _lines.add(CartLine(i.product, i.product.sellUnit(i.unit), i.unitPrice)..qty.text = formatQty(i.qty));
+    }
+  }
+
+  /// Stock the corrected sale gives back in the same save.
+  Map<Product, double> get _returning => {
+        for (final i in widget.corrects?.items ?? const <SaleItem>[]) i.product: i.baseQty,
+      };
+
+  @override
   void dispose() {
     _paid.dispose();
     _reference.dispose();
@@ -74,7 +99,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('New Sale')),
+      appBar: AppBar(title: Text(widget.corrects == null ? 'New Sale' : 'Correct sale ${widget.corrects!.invoiceNumber ?? widget.corrects!.id}')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -146,7 +171,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
           padding: const EdgeInsets.all(16),
           child: FilledButton(
             onPressed: _lines.isEmpty || _saving ? null : _submit,
-            child: const Text('Complete Sale'),
+            child: Text(widget.corrects == null ? 'Complete Sale' : 'Save correction'),
           ),
         ),
       ),
@@ -156,7 +181,7 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
   bool _saving = false;
 
   Future<void> _submit() async {
-    final problem = cartProblem(_lines, checkMinimum: true, allowBelowMinimum: _allowBelowMinimum, checkStock: true);
+    final problem = cartProblem(_lines, checkMinimum: true, allowBelowMinimum: _allowBelowMinimum, checkStock: true, returning: _returning);
     final paidNow = _paidNow;
     final paidProblem = paidNow == null || paidNow < 0
         ? 'Enter the amount paid now.'
@@ -174,6 +199,17 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
       for (final l in _lines) SaleItem(product: l.product, qty: l.qtyValue, unitPrice: l.priceValue, unit: l.unit.label, size: l.unit.size),
     ];
 
+    final old = widget.corrects;
+    var reason = '';
+    if (old != null) {
+      final why = await askReason(context,
+          title: 'Correct sale ${old.invoiceNumber ?? old.id}',
+          message: 'The old sale is cancelled${old.invoiceNumber == null ? '' : ' with a credit note'} and this one saved in its place. Both stay on record.',
+          action: 'Save correction');
+      if (why == null || !mounted) return;
+      reason = why;
+    }
+
     final Sale sale;
     setState(() => _saving = true);
     try {
@@ -186,6 +222,8 @@ class _NewSaleScreenState extends State<NewSaleScreen> {
         allowBelowMinimum: _allowBelowMinimum,
         account: _account,
         paidNow: partPaid ? (amount: paidNow!, method: _method, reference: _reference.text, collector: user) : null,
+        corrects: old,
+        reason: reason,
       );
     } on PaymentException catch (e) {
       setState(() => _error = e.message);

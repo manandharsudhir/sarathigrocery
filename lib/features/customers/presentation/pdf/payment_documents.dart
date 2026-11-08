@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:sarathigrocery/core/utils/formatters.dart';
@@ -114,6 +115,9 @@ Future<Uint8List> statementPdf(Customer customer, CustomerStatement statement, {
   ));
   return doc.save();
 }
+
+/// Opens the system print dialog for [bytes].
+Future<void> printPdf(Uint8List bytes, String name) => Printing.layoutPdf(onLayout: (_) async => bytes, name: name);
 
 Future<void> sharePdf(Uint8List bytes, String fileName, {String? text}) =>
     SharePlus.instance.share(ShareParams(files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: fileName)], fileNameOverrides: [fileName], text: text));

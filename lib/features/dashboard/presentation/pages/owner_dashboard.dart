@@ -5,6 +5,7 @@ import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/core/widgets/metric_card.dart';
 import 'package:sarathigrocery/features/accounting/presentation/controllers/accounting_controller.dart';
 import 'package:sarathigrocery/features/accounting/presentation/pages/accounting_screen.dart';
+import 'package:sarathigrocery/features/reports/presentation/pages/reports_screen.dart' show CorrectionsScreen;
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/credit_status.dart';
@@ -101,6 +102,7 @@ class OwnerDashboard extends StatelessWidget {
 
         _NeedsAttention(
           pendingOrders: ordering.pendingCount,
+          shopCopiesMissing: ordering.shopCopiesMissing.length,
           lowStock: inventory.lowStockCount,
           nearExpiry: settings.has(Feature.expiry) ? inventory.nearExpiryCount : 0,
           overdueCustomers: overdueCount,
@@ -108,10 +110,12 @@ class OwnerDashboard extends StatelessWidget {
           payments: customers.payments,
           unbalancedCustomers: customers.customers.where((c) => !customers.payments.statementFor(c).balanced).length,
           booksBalanced: accounting.booksBalanced,
+          frequentCorrectors: accounting.frequentCorrectors,
+          onOpenCorrections: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CorrectionsScreen(corrections: () => accounting.corrections))),
           onOpenAccounts: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AccountingScreen(controller: accounting, auth: auth, suppliers: suppliers))),
           nav: nav,
           onOpenCustomers: openCustomers,
-          onOpenPayments: (tab) => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentsScreen(payments: customers.payments, auth: auth, initialTab: tab))),
+          onOpenPayments: (tab) => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentsScreen(payments: customers.payments, auth: auth, initialTab: tab, ordering: ordering))),
         ),
 
         const SliverToBoxAdapter(child: SectionHeader('Money')),
@@ -188,6 +192,7 @@ class OwnerDashboard extends StatelessWidget {
 class _NeedsAttention extends StatelessWidget {
   const _NeedsAttention({
     required this.pendingOrders,
+    required this.shopCopiesMissing,
     required this.lowStock,
     required this.nearExpiry,
     required this.overdueCustomers,
@@ -195,6 +200,8 @@ class _NeedsAttention extends StatelessWidget {
     required this.payments,
     required this.unbalancedCustomers,
     required this.booksBalanced,
+    required this.frequentCorrectors,
+    required this.onOpenCorrections,
     required this.onOpenAccounts,
     required this.nav,
     required this.onOpenCustomers,
@@ -205,10 +212,13 @@ class _NeedsAttention extends StatelessWidget {
   final PaymentsController payments;
   final int unbalancedCustomers;
   final bool booksBalanced;
+  final Map<String, int> frequentCorrectors;
+  final VoidCallback onOpenCorrections;
   final VoidCallback onOpenAccounts;
   final void Function(int tab) onOpenPayments;
 
   final int pendingOrders;
+  final int shopCopiesMissing;
   final int lowStock;
   final int nearExpiry;
   final int overdueCustomers;
@@ -229,6 +239,14 @@ class _NeedsAttention extends StatelessWidget {
           label: 'The books don\'t match the shop\'s records',
           actionLabel: 'Check',
           onTap: onOpenAccounts,
+        ),
+      for (final MapEntry(key: who, value: n) in frequentCorrectors.entries)
+        AttentionTile(
+          icon: Icons.history_edu_outlined,
+          color: Colors.deepOrange,
+          label: '$who reversed or corrected $n entries this week',
+          actionLabel: 'Review',
+          onTap: onOpenCorrections,
         ),
       if (disputed > 0)
         AttentionTile(
@@ -269,6 +287,14 @@ class _NeedsAttention extends StatelessWidget {
           label: '$overLimitSales udharo ${overLimitSales == 1 ? 'sale' : 'sales'} this week went over the credit limit',
           actionLabel: 'Review',
           onTap: nav.openSales,
+        ),
+      if (shopCopiesMissing > 0)
+        AttentionTile(
+          icon: Icons.fact_check_outlined,
+          color: Colors.orange,
+          label: '$shopCopiesMissing signed shop ${shopCopiesMissing == 1 ? 'copy hasn\'t' : 'copies haven\'t'} come back from delivery',
+          actionLabel: 'View orders',
+          onTap: nav.openOrders,
         ),
       if (pendingOrders > 0)
         AttentionTile(

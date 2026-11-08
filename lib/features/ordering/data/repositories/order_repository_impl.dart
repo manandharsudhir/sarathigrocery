@@ -31,6 +31,11 @@ class OrderRepositoryImpl implements OrderRepository {
             'vatAmount': o.vatAmount,
             'vatIncluded': o.vatIncluded,
             'exemptAmount': o.exemptAmount,
+            'invoiceId': o.invoiceId,
+            'invoiceNumber': o.invoiceNumber,
+            'prepaid': o.prepaid,
+            'shopCopyAt': o.shopCopyAt == null ? null : toMillis(o.shopCopyAt!),
+            'shopCopyByName': o.shopCopyByName,
           },
           fromJson: (j) {
             final customer = customers.byId(j['customerId']);
@@ -59,6 +64,11 @@ class OrderRepositoryImpl implements OrderRepository {
               vatAmount: toDouble(j['vatAmount']),
               vatIncluded: j['vatIncluded'] ?? true,
               exemptAmount: toDouble(j['exemptAmount']),
+              invoiceId: j['invoiceId'],
+              invoiceNumber: j['invoiceNumber'] ?? '',
+              prepaid: toDouble(j['prepaid']),
+              shopCopyAt: j['shopCopyAt'] == null ? null : fromMillis(j['shopCopyAt']),
+              shopCopyByName: j['shopCopyByName'] ?? '',
             );
           },
           merge: (o, j) => o
@@ -67,7 +77,12 @@ class OrderRepositoryImpl implements OrderRepository {
             ..assignedToId = j['assignedToId']
             ..assignedToName = j['assignedToName'] ?? ''
             ..receivedSignature = j['receivedSignature']
-            ..receivedBy = j['receivedBy'] ?? '',
+            ..receivedBy = j['receivedBy'] ?? ''
+            ..invoiceId = j['invoiceId']
+            ..invoiceNumber = j['invoiceNumber'] ?? ''
+            ..prepaid = toDouble(j['prepaid'])
+            ..shopCopyAt = j['shopCopyAt'] == null ? null : fromMillis(j['shopCopyAt'])
+            ..shopCopyByName = j['shopCopyByName'] ?? '',
         );
 
   final SyncedCollection<CustomerOrder> _orders;
@@ -126,6 +141,9 @@ class OrderRepositoryImpl implements OrderRepository {
       ..receivedBy = receivedBy;
     _orders.save(order);
   }
+
+  @override
+  void save(CustomerOrder order) => _orders.save(order);
 
   @override
   void setStatus(CustomerOrder order, OrderStatus status) {

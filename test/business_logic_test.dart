@@ -679,6 +679,29 @@ void main() {
       }
     });
 
+    test('VAT shop: dispatch issues the tax invoice; goods refused at the door get a credit-note number', () async {
+      final owner = await vatShop(included: false);
+      final me = owner.auth.currentUser!;
+      final oil = owner.inventory.createProduct(name: 'Oil', category: 'General', unitPrice: 100, purchasePrice: 80, stockQty: 10, reorderLevel: 1);
+      final customer = owner.customers.customers.first;
+      final order = owner.ordering.placeOrderFor(customer, atMinimum({oil: 3}), deliveryType: DeliveryType.delivery, staff: me)!;
+      expect(() => owner.ordering.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: me.name), throwsStateError, reason: 'needs a number: use dispatch');
+      await owner.ordering.dispatch(order, by: me);
+      final fy = BsDate.fiscalYearLabel(BsDate.fromAd(DateTime.now()).fiscalYear);
+      expect(order.invoiceNumber, '$fy-0001');
+      expect(owner.ordering.refusedValue(order, {0: 1}), 113);
+      await owner.ordering.deliverAndCollect(order, amount: 0, method: PaymentMethod.cash, refused: {0: 1}, signature: testSignature(), signedName: 'x', collector: me);
+      final ret = owner.sales.sales.singleWhere((x) => x.isDoorReturn);
+      expect(ret.invoiceNumber, 'CN $fy-0001');
+      expect(ret.total, -113);
+      expect(ret.vatAmount, -13);
+      final (from, to) = (DateTime.now().subtract(const Duration(days: 1)), DateTime.now().add(const Duration(days: 1)));
+      expect(salesBook(owner.sales, from, to).map((r) => r.vat), [39, -13]);
+      for (final c in owner.accounting.checks) {
+        expect(c.books, closeTo(c.records, 0.01), reason: c.label);
+      }
+    });
+
     test('VAT-exclusive prices: VAT is added on top', () async {
       final owner = await vatShop(included: false);
       final p = owner.inventory.createProduct(name: 'Oil', category: 'General', unitPrice: 100, purchasePrice: 80, stockQty: 10, reorderLevel: 1);
@@ -1348,6 +1371,178 @@ void main() {
       expect(owner.auditRepository.entries.any((e) => e.action == 'Credit limit changed' && e.entityId == customer.id), isTrue);
     });
   });
+
+  group('corrections', () {
+    void expectBooksMatch(AppScope s) {
+      for (final c in s.accounting.checks) {
+        expect(c.books, closeTo(c.records, 0.01), reason: c.label);
+      }
+      expect(s.accounting.booksBalanced, isTrue);
+    }
+
+    test('expense and transfer reversed: money back, both sides undone, books still match, never twice', () async {
+      final owner = await signedIn(UserRole.owner);
+      final me = owner.auth.currentUser!;
+      final cash0 = owner.cash.cashInHand;
+      owner.cash.addExpense('Rent', 500, 'typo', createdByName: me.name);
+      final expense = owner.cash.expenses.last;
+      expect(owner.cash.similarExpenseToday('Rent', 500), expense);
+      owner.cash.reverseEntry(owner.cash.lineOf(expense)!, 'entered twice', userName: me.name, owner: true);
+      expect(owner.cash.cashInHand, closeTo(cash0, 0.01));
+      expect(owner.cash.expenses, isNot(contains(expense)));
+      expect(owner.cash.allExpenses, contains(expense));
+      expect(() => owner.cash.reverseEntry(owner.cash.lineOf(expense)!, 'again', userName: me.name, owner: true), throwsA(isA<AccountingException>()));
+
+      owner.cash.transfer(Acc.cash, Acc.bank, 1000, '', userName: me.name);
+      final bank = owner.cash.balanceOf(Acc.bank);
+      owner.cash.reverseEntry(owner.cash.ledger.lastWhere((e) => e.type == CashEntryType.moneyIn), 'wrong account', userName: me.name, owner: true);
+      expect(owner.cash.cashInHand, closeTo(cash0, 0.01));
+      expect(owner.cash.balanceOf(Acc.bank), closeTo(bank - 1000, 0.01));
+      await pumpEventQueue();
+      expectBooksMatch(owner);
+    });
+
+    test('cash staff reverse only today\'s entries, never owners\' money', () async {
+      final b = await TestBusiness.create(safeguards: false);
+      final owner = await b.device(UserRole.owner);
+      owner.cash.capitalIn(owner.cash.ownerNames.first, 2000, Acc.cash, userName: 'Owner');
+      await pumpEventQueue();
+      final cashier = await b.cashier();
+      final capital = cashier.cash.ledger.lastWhere((e) => e.type == CashEntryType.moneyIn);
+      expect(cashier.cash.reverseProblem(capital, owner: false), contains('owner'));
+      cashier.cash.addExpense('Tea', 50, '', createdByName: 'cashier');
+      expect(cashier.cash.reverseProblem(cashier.cash.lineOf(cashier.cash.expenses.last)!, owner: false), isNull);
+      final old = CashLedgerEntry(id: 'L-old', date: DateTime.now().subtract(const Duration(days: 2)), type: CashEntryType.expense, amount: 5, note: 'x');
+      expect(cashier.cash.reverseProblem(old, owner: false), contains('before today'));
+    });
+
+    test('supplier payment reversed: owed again, money back', () async {
+      final owner = await signedIn(UserRole.owner);
+      final supplier = owner.suppliers.suppliers.first;
+      final payable = supplier.amountPayable;
+      final cash0 = owner.cash.cashInHand;
+      owner.suppliers.recordPayment(supplier, 300, '', userName: 'Owner');
+      final pay = owner.suppliers.paymentsTo(supplier).first;
+      expect(owner.suppliers.similarPaymentToday(supplier, 300), pay);
+      owner.suppliers.reversePayment(supplier, pay, 'paid the wrong supplier', userName: 'Owner', owner: true);
+      expect(supplier.amountPayable, closeTo(payable, 0.01));
+      expect(owner.cash.cashInHand, closeTo(cash0, 0.01));
+      expect(owner.suppliers.reversalOf(pay), isNotNull);
+      await pumpEventQueue();
+      expectBooksMatch(owner);
+    });
+
+    test('purchase reversed whole, and corrected after the goods were sold: stock, cost, payable and books follow', () async {
+      final owner = await signedIn(UserRole.owner);
+      final me = owner.auth.currentUser!;
+      final supplier = owner.suppliers.suppliers.first;
+      final oil = owner.inventory.createProduct(name: 'Oil', category: 'General', unitPrice: 150, purchasePrice: 100, stockQty: 10, reorderLevel: 1);
+      final payable = supplier.amountPayable;
+      final cash0 = owner.cash.cashInHand;
+
+      final twice = owner.purchasing.createPurchase(supplier: supplier, items: [PurchaseItem(product: oil, qty: 10, unitCost: 120)], paidAmount: 200, userName: me.name, supplierBillNo: 'B-7');
+      expect(oil.purchasePrice, closeTo(110, 0.01));
+      expect(owner.purchasing.duplicateBill(supplier, ' b-7 '), twice);
+      owner.purchasing.reversePurchase(twice, 'entered twice', userName: me.name, owner: true);
+      expect(oil.stockQty, 10);
+      expect(oil.purchasePrice, closeTo(100, 0.01));
+      expect(supplier.amountPayable, closeTo(payable, 0.01));
+      expect(owner.cash.cashInHand, closeTo(cash0, 0.01));
+      expect(owner.purchasing.purchases, isNot(contains(twice)));
+      expect(owner.purchasing.duplicateBill(supplier, 'B-7'), isNull);
+      expect(() => owner.purchasing.reversePurchase(twice, 'again', userName: me.name, owner: true), throwsA(isA<AccountingException>()));
+
+      // Typed 2 instead of 20, and most of it sold before anyone noticed.
+      final low = owner.purchasing.createPurchase(supplier: supplier, items: [PurchaseItem(product: oil, qty: 2, unitCost: 100)], userName: me.name);
+      owner.sales.recordSale(items: [SaleItem(product: oil, qty: 11, unitPrice: 150)], isCredit: false, userName: me.name);
+      expect(() => owner.purchasing.reversePurchase(low, 'x', userName: me.name, owner: true), throwsA(isA<AccountingException>()), reason: 'stock would go below zero');
+      final fixed = owner.purchasing.correctPurchase(low, 'typed 2 for 20', supplier: supplier, items: [PurchaseItem(product: oil, qty: 20, unitCost: 100)], userName: me.name, owner: true);
+      expect(oil.stockQty, 19);
+      expect(fixed.corrects, low.id);
+      expect(owner.purchasing.correctionOf(low), fixed);
+      expect(supplier.amountPayable, closeTo(payable + 2000, 0.01));
+      await pumpEventQueue();
+      expectBooksMatch(owner);
+    });
+
+    test('sale corrected: old one cancelled, new one linked, its payment follows', () async {
+      final owner = await signedIn(UserRole.owner);
+      final me = owner.auth.currentUser!;
+      final rice = owner.inventory.createProduct(name: 'Rice', category: 'General', unitPrice: 100, purchasePrice: 80, stockQty: 50, reorderLevel: 1);
+      final customer = owner.customers.createCustomer(name: 'Fixer', phone: '9812222222', location: 'Patan', creditLimit: 10000, by: me);
+      final wrong = await owner.sales.sell(items: [SaleItem(product: rice, qty: 3, unitPrice: 100)], isCredit: true, customer: customer, userName: me.name, userId: me.id,
+          paidNow: (amount: 100, method: PaymentMethod.cash, reference: '', collector: me));
+      await pumpEventQueue();
+      final balance = customer.outstandingBalance;
+      final right = await owner.sales.sell(items: [SaleItem(product: rice, qty: 2, unitPrice: 100)], isCredit: true, customer: customer, userName: me.name, userId: me.id, corrects: wrong, reason: 'sold 2 not 3');
+      expect(wrong.status, SaleStatus.cancelled);
+      expect(right.corrects, wrong.id);
+      expect(owner.sales.correctionOf(wrong), right);
+      expect(rice.stockQty, 48);
+      expect(customer.outstandingBalance, closeTo(balance - 100, 0.01));
+      expect(owner.sales.paidOn(right), closeTo(100, 0.01), reason: 'the payment on the old bill pays the new one');
+      expect(owner.sales.canCorrect(wrong), isFalse);
+      expect(() => owner.sales.sell(items: [SaleItem(product: rice, qty: 1, unitPrice: 100)], isCredit: false, userName: me.name, corrects: right, reason: ' '),
+          throwsA(isA<AccountingException>()), reason: 'a reason is required');
+      await pumpEventQueue();
+      expectBooksMatch(owner);
+    });
+
+    test('items brought back to the counter: stock in, cash refunded or bill reduced; whole return refused after', () async {
+      final owner = await signedIn(UserRole.owner);
+      final me = owner.auth.currentUser!;
+      final rice = owner.inventory.createProduct(name: 'Rice', category: 'General', unitPrice: 100, purchasePrice: 80, stockQty: 50, reorderLevel: 1);
+      final dal = owner.inventory.createProduct(name: 'Dal', category: 'General', unitPrice: 200, purchasePrice: 150, stockQty: 50, reorderLevel: 1);
+      final sale = await owner.sales.sell(items: [SaleItem(product: rice, qty: 4, unitPrice: 100), SaleItem(product: dal, qty: 1, unitPrice: 200)], isCredit: false, userName: me.name);
+      await pumpEventQueue();
+      final cash0 = owner.cash.cashInHand;
+      final back = await owner.sales.returnItems(sale, {0: 1}, 'damaged', userName: me.name);
+      await pumpEventQueue();
+      expect(back.total, -100);
+      expect(owner.cash.cashInHand, closeTo(cash0 - 100, 0.01));
+      expect(rice.stockQty, 47);
+      expect(owner.sales.remainingOn(sale), [3, 1]);
+      expect(owner.sales.returnedOn(sale), 100);
+      expect(() => owner.sales.returnItems(sale, {0: 4}, 'x', userName: me.name), throwsA(isA<AccountingException>()));
+      expect(owner.sales.canCorrect(sale), isFalse);
+      expect(owner.sales.reverse(sale, SaleStatus.returned, 'all', userName: me.name), throwsStateError);
+
+      final customer = owner.customers.createCustomer(name: 'Returner', phone: '9813333333', location: 'Patan', creditLimit: 10000, by: me);
+      final udharo = await owner.sales.sell(items: [SaleItem(product: dal, qty: 3, unitPrice: 200)], isCredit: true, customer: customer, userName: me.name);
+      await owner.sales.returnItems(udharo, {0: 1}, 'wrong size', userName: me.name);
+      await pumpEventQueue();
+      expect(customer.outstandingBalance, closeTo(400, 0.01));
+      expect(owner.sales.returnedOn(udharo), closeTo(200, 0.01));
+      await pumpEventQueue();
+      expectBooksMatch(owner);
+    });
+
+    test('VAT shop: correcting a tax invoice issues a credit note and a new invoice in one save', () async {
+      final owner = await signedIn(UserRole.owner);
+      owner.settings.setVat(registered: true, pan: '601234567', rate: 13, pricesIncludeVat: true);
+      final me = owner.auth.currentUser!;
+      final rice = owner.inventory.createProduct(name: 'Rice', category: 'General', unitPrice: 113, purchasePrice: 80, stockQty: 100, reorderLevel: 1);
+      final wrong = await owner.sales.sell(items: [SaleItem(product: rice, qty: 2, unitPrice: 113)], isCredit: false, userName: me.name);
+      final right = await owner.sales.sell(items: [SaleItem(product: rice, qty: 1, unitPrice: 113)], isCredit: false, userName: me.name, corrects: wrong, reason: 'one only');
+      final fy = BsDate.fiscalYearLabel(BsDate.fromAd(DateTime.now()).fiscalYear);
+      expect(right.invoiceNumber, '$fy-0002');
+      expect(owner.sales.creditNoteFor(wrong)!.number, 'CN $fy-0001');
+      expect(wrong.status, SaleStatus.cancelled);
+      await pumpEventQueue();
+      expectBooksMatch(owner);
+    });
+
+    test('the owner is told when one person corrects more than the alert level in a week', () async {
+      final owner = await signedIn(UserRole.owner);
+      owner.settings.setCorrectionAlert(2);
+      for (var i = 0; i < 3; i++) {
+        owner.cash.addExpense('Tea', 10.0 + i, '', createdByName: 'Owner');
+        owner.cash.reverseEntry(owner.cash.lineOf(owner.cash.expenses.last)!, 'oops', userName: 'Owner', owner: true);
+      }
+      expect(owner.accounting.corrections, hasLength(3));
+      expect(owner.accounting.frequentCorrectors, {'Owner': 3});
+    });
+  });
 }
 
 
@@ -1371,6 +1566,85 @@ void paymentTests() {
     final cashier = await business.cashier();
     return (business: business, owner: owner, cashier: cashier, delivery: delivery, order: order);
   }
+
+  group('dispatch billing', () {
+    test('paid before dispatch, billed at dispatch, part refused at the door', () async {
+      final s = await scenario(safeguards: false);
+      final me = s.owner.auth.currentUser!;
+      final shop = s.owner.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
+      final ghee = s.owner.inventory.products.firstWhere((p) => p.name == 'Ghee 5L');
+      final order = s.owner.ordering.placeOrderFor(shop, atMinimum({ghee: 3}), deliveryType: DeliveryType.delivery, staff: me)!;
+      s.owner.ordering.assign(order, s.owner.ordering.deliverers.firstWhere((u) => u.role == UserRole.delivery), by: me);
+      s.owner.ordering.prepay(order, 2000, method: PaymentMethod.cash, collector: me);
+      final stockBefore = ghee.stockQty;
+      await s.owner.ordering.dispatch(order, by: me);
+      await pumpEventQueue();
+
+      expect(order.status, OrderStatus.outForDelivery);
+      expect(order.prepaid, 2000);
+      expect(ghee.stockQty, stockBefore - 3, reason: 'stock leaves with the goods');
+      expect(shop.outstandingBalance, 5000 - 2000 + 15000);
+      final invoice = s.owner.sales.invoiceForOrder(order.id)!;
+      expect(order.invoiceId, invoice.id);
+      expect(s.owner.sales.paidOn(invoice), 2000, reason: 'the prepayment pays its own order\'s bill');
+      expect(() => s.owner.ordering.advanceOrderStatus(order, OrderStatus.cancelled, userName: me.name), throwsStateError, reason: 'billed: not delivered first');
+
+      final d = s.delivery.auth.currentUser!;
+      final dOrder = s.delivery.ordering.orders.firstWhere((o) => o.id == order.id);
+      expect(dOrder.prepaid, 2000, reason: 'the delivery person sees what was paid');
+      await expectLater(s.delivery.ordering.deliverAndCollect(dOrder, amount: 0, method: PaymentMethod.cash, refused: {0: 3}, collector: d), throwsA(isA<PaymentException>()));
+      expect(s.delivery.ordering.refusedValue(dOrder, {0: 1}), 5000);
+      await s.delivery.ordering.deliverAndCollect(dOrder, amount: 3000, method: PaymentMethod.cash, refused: {0: 1}, collector: d);
+      await pumpEventQueue();
+
+      expect(ghee.stockQty, stockBefore - 2, reason: 'the refused one came back');
+      expect(s.owner.sales.returnedOn(invoice), 5000);
+      expect(s.owner.sales.paidOn(invoice), 5000);
+      expect(shop.outstandingBalance, 5000 + 5000, reason: 'opening + what is still due on the bill');
+      expect(s.owner.payments.statementFor(shop).balanced, isTrue);
+      expect(s.owner.sales.sales.where((x) => x.isDoorReturn).single.total, -5000);
+      expect(() => s.owner.sales.cancelSale(invoice, 'x', userName: me.name), throwsStateError, reason: 'a part-returned bill is not reversed whole');
+
+      final cashier = await s.business.cashier();
+      final cOrder = cashier.ordering.orders.firstWhere((o) => o.id == order.id);
+      expect(cashier.ordering.shopCopiesMissing, isEmpty, reason: 'only after a day');
+      expect(() => s.delivery.ordering.markShopCopyReceived(dOrder, by: d), throwsA(isA<PaymentException>()));
+      cashier.ordering.markShopCopyReceived(cOrder, by: cashier.auth.currentUser!);
+      await pumpEventQueue();
+      expect(s.owner.ordering.orders.firstWhere((o) => o.id == order.id).shopCopyAt, isNotNull);
+      expect(cashier.accounting.booksBalanced, isTrue);
+    });
+
+    test('not delivered: the bill is cancelled, stock is held again, the next dispatch bills anew', () async {
+      final s = await scenario();
+      final me = s.owner.auth.currentUser!;
+      final order = s.order;
+      final ghee = order.items.single.product;
+      final shop = order.customer;
+      final reserved = ghee.reservedQty;
+      await s.owner.ordering.dispatch(order, by: me);
+      await pumpEventQueue();
+      final first = order.invoiceId;
+      expect(shop.outstandingBalance, 10000);
+
+      final employee = await s.business.device(UserRole.employee);
+      await expectLater(employee.ordering.notDelivered(employee.ordering.orders.single, 'away', by: employee.auth.currentUser!), throwsA(isA<PaymentException>()),
+          reason: 'needs Cancel sales');
+      await s.owner.ordering.notDelivered(order, 'customer away', by: me);
+      await pumpEventQueue();
+      expect(order.status, OrderStatus.ready);
+      expect(order.invoiceId, isNull);
+      expect(ghee.reservedQty, reserved, reason: 'held for the order again');
+      expect(shop.outstandingBalance, 5000);
+      expect(s.owner.sales.sales.firstWhere((x) => x.id == first).status, SaleStatus.cancelled);
+
+      await s.owner.ordering.dispatch(order, by: me);
+      await pumpEventQueue();
+      expect(order.invoiceId, isNot(first));
+      expect(shop.outstandingBalance, 10000);
+      expect(s.owner.accounting.booksBalanced, isTrue);
+    });
+  });
 
   group('payment verification', () {
     test('customer pays 7,000 at the door on a 5,000 order: 5,000 settles the order, 2,000 the old balance', () async {
@@ -1525,6 +1799,8 @@ void paymentTests() {
       await pumpEventQueue();
       final shop = s.delivery.customers.customers.firstWhere((c) => c.name == 'Kathmandu Kirana');
       final stock = order.items.single.product.stockQty;
+      final balance = shop.outstandingBalance;
+      expect(balance, 5000 + order.total, reason: 'billed when it went out');
 
       s.business.store.online = false;
       await expectLater(
@@ -1534,10 +1810,11 @@ void paymentTests() {
       await pumpEventQueue();
 
       expect(order.status, OrderStatus.outForDelivery, reason: 'local copy rolled back');
-      expect(shop.outstandingBalance, 5000);
+      expect(shop.outstandingBalance, balance);
       expect(order.items.single.product.stockQty, stock);
       expect(s.delivery.payments.payments, isEmpty);
-      expect(s.owner.sales.sales.where((x) => x.orderId == order.id), isEmpty, reason: 'nothing reached the server');
+      expect(s.owner.ordering.orders.single.status, OrderStatus.outForDelivery, reason: 'nothing reached the server');
+      expect(s.owner.sales.sales.where((x) => x.orderId == order.id).length, 1, reason: 'only the bill from dispatch');
     });
 
     test('reversing a payment already in the till refunds it out of the till', () async {
@@ -1604,8 +1881,8 @@ void paymentTests() {
       s.business.store.online = false; // queued like any write, not refused
       final payment = (await s.delivery.ordering.deliverAndCollect(order, amount: 7000, method: PaymentMethod.cash, collector: s.delivery.auth.currentUser!))!;
       await pumpEventQueue();
-      expect(recorded, hasLength(1), reason: 'delivery + invoice + payment + settlement: one atomic batch');
-      expect({for (final op in recorded.single) op.collection.split('/').last}, containsAll(['orders', 'sales', 'customerPayments', 'cashLedger']));
+      expect(recorded, hasLength(1), reason: 'delivery + payment + settlement: one atomic batch (billed at dispatch)');
+      expect({for (final op in recorded.single) op.collection.split('/').last}, containsAll(['orders', 'customerPayments', 'cashLedger']));
       expect(order.status, OrderStatus.delivered);
       expect(payment.confirmedBySignature, isFalse);
       expect(payment.isCustomerConfirmed, isTrue, reason: 'no phone check');

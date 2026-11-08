@@ -14,6 +14,7 @@ import 'package:sarathigrocery/features/purchasing/domain/entities/purchase_retu
 import 'package:sarathigrocery/features/purchasing/domain/repositories/purchase_repository.dart';
 import 'package:sarathigrocery/features/purchasing/domain/usecases/create_purchase.dart';
 import 'package:sarathigrocery/features/purchasing/domain/usecases/record_purchase_return.dart';
+import 'package:sarathigrocery/features/purchasing/domain/usecases/reverse_purchase.dart';
 import 'package:sarathigrocery/features/suppliers/domain/entities/supplier.dart';
 import 'package:sarathigrocery/features/suppliers/domain/repositories/supplier_repository.dart';
 
@@ -31,9 +32,13 @@ class PurchasingController extends ChangeNotifier {
     double Function()? margin,
   })  : _margin = margin ?? (() => 0),
         _notifications = notifications,
+        _audit = audit,
         _vatShop = vatShop ?? (() => false),
         _moneyAccounts = moneyAccounts ?? (() => const ['cash', 'bank', 'wallet']), _createPurchase = CreatePurchase(_repository, products, suppliers, cash, audit, notifications, books),
-        _recordReturn = RecordPurchaseReturn(_repository, products, suppliers, audit, books);
+        _recordReturn = RecordPurchaseReturn(_repository, products, suppliers, audit, books),
+        _reverse = ReversePurchase(_repository, products, suppliers, cash, audit, notifications, books);
+
+  final ReversePurchase _reverse;
 
   final PurchaseRepository _repository;
   final CreatePurchase _createPurchase;
@@ -41,6 +46,7 @@ class PurchasingController extends ChangeNotifier {
   final bool Function() _vatShop;
   final double Function() _margin;
   final NotificationRepository _notifications;
+  final AuditRepository _audit;
 
   /// Default margin % for suggested minimum prices (Settings).
   double get marginPercent => _margin();
@@ -63,7 +69,62 @@ class PurchasingController extends ChangeNotifier {
   List<String> get moneyAccounts => _moneyAccounts();
   final RecordPurchaseReturn _recordReturn;
 
+  /// Purchases still standing (reversed ones left out of every total).
   List<Purchase> get purchases => _repository.purchases;
+
+  /// Every purchase, reversed ones included (for lists).
+  List<Purchase> get allPurchases => _repository.allPurchases;
+
+  /// The standing purchase that already carries supplier bill [billNo] from
+  /// [supplier] ([except]: the one being corrected). A supplier never
+  /// issues the same number twice, so this is a double entry.
+  Purchase? duplicateBill(Supplier supplier, String billNo, {Purchase? except}) {
+    final no = billNo.trim().toLowerCase();
+    if (no.isEmpty) return null;
+    return purchases.where((p) => p != except && p.supplier.id == supplier.id && p.supplierBillNo.trim().toLowerCase() == no).firstOrNull;
+  }
+
+  /// A purchase from [supplier] for the same [total] already today, or null.
+  Purchase? similarToday(Supplier supplier, double total, {Purchase? except}) {
+    final now = DateTime.now();
+    return purchases
+        .where((p) => p != except && p.supplier.id == supplier.id && (p.total - total).abs() < 0.005 && p.date.year == now.year && p.date.month == now.month && p.date.day == now.day)
+        .firstOrNull;
+  }
+
+  /// The purchase that replaced [purchase], if it was corrected.
+  Purchase? correctionOf(Purchase purchase) => allPurchases.where((p) => p.corrects == purchase.id).firstOrNull;
+
+  /// Takes [purchase] (entered by mistake) back out, whole.
+  void reversePurchase(Purchase purchase, String reason, {required String userName, required bool owner}) {
+    _reverse(purchase, reason, userName: userName, owner: owner);
+    notifyListeners();
+    AppSignal.instance.ping();
+  }
+
+  /// Replaces [old] with the purchase as it should have been, in one save:
+  /// [old] reversed, the new one recorded and linked to it.
+  Purchase correctPurchase(
+    Purchase old,
+    String reason, {
+    required Supplier supplier,
+    required List<PurchaseItem> items,
+    double paidAmount = 0,
+    required String userName,
+    required bool owner,
+    String account = 'cash',
+    double vatAmount = 0,
+    String supplierBillNo = '',
+    DateTime? supplierBillDate,
+  }) {
+    _reverse(old, 'Corrected: ${reason.trim()}', userName: userName, owner: owner, replacement: items);
+    final purchase = _createPurchase(supplier, items, paidAmount,
+        userName: userName, account: account, vatAmount: vatAmount, supplierBillNo: supplierBillNo, supplierBillDate: supplierBillDate, corrects: old.id);
+    _audit.record(userName, 'Purchase corrected', 'Purchase', entityId: purchase.id, oldValue: old.id, newValue: reason.trim());
+    notifyListeners();
+    AppSignal.instance.ping();
+    return purchase;
+  }
 
   List<PurchaseReturn> get purchaseReturns => _repository.purchaseReturns;
 

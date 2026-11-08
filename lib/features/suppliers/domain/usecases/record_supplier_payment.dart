@@ -15,14 +15,15 @@ class RecordSupplierPayment {
 
   void call(Supplier supplier, double amount, String note, {required String userName, String account = 'cash'}) {
     _suppliers.applyPayableChange(supplier, -amount);
+    final j = _books.supplierPaid(supplier.id, supplier.name, amount, account, by: userName);
     _cash.addLedgerEntry(
       type: CashEntryType.supplierPayment,
       amount: amount,
       note: note.isEmpty ? 'Payment to ${supplier.name}' : note,
       reference: supplier.id,
       account: account,
+      journalId: j?.id ?? '',
     );
-    _books.supplierPaid(supplier.id, supplier.name, amount, account, by: userName);
     _audit.record(userName, 'Supplier payment recorded', 'Supplier', entityId: supplier.id, newValue: amount.toStringAsFixed(0));
   }
 }

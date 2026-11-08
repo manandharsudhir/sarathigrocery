@@ -32,8 +32,9 @@ class CartLine {
 String _money(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 
 /// What stops [lines] from being saved, or null. Sales/orders pass
-/// [checkMinimum] (prices) and [checkStock] (available stock).
-String? cartProblem(List<CartLine> lines, {bool checkMinimum = false, bool allowBelowMinimum = false, bool checkStock = false}) {
+/// [checkMinimum] (prices) and [checkStock] (available stock; [returning]:
+/// base quantities coming back in the same save, e.g. a corrected sale).
+String? cartProblem(List<CartLine> lines, {bool checkMinimum = false, bool allowBelowMinimum = false, bool checkStock = false, Map<Product, double> returning = const {}}) {
   if (lines.isEmpty) return 'Add at least one item.';
   if (lines.any((l) => l.qtyValue <= 0)) return 'Every quantity must be more than 0.';
   if (lines.any((l) => l.priceValue < 0)) return 'Prices can\'t be negative.';
@@ -51,7 +52,8 @@ String? cartProblem(List<CartLine> lines, {bool checkMinimum = false, bool allow
       wanted[l.product] = (wanted[l.product] ?? 0) + l.baseQty;
     }
     for (final e in wanted.entries) {
-      if (e.value > e.key.availableStock + 1e-9) return 'Only ${e.key.describeQty(e.key.availableStock)} of ${e.key.name} available.';
+      final available = e.key.availableStock + (returning[e.key] ?? 0);
+      if (e.value > available + 1e-9) return 'Only ${e.key.describeQty(available)} of ${e.key.name} available.';
     }
   }
   return null;

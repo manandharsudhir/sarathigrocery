@@ -26,7 +26,7 @@ class PurchasesScreen extends StatelessWidget {
     return ListenableBuilder(
       listenable: purchasing,
       builder: (context, _) {
-        final purchases = purchasing.purchases.reversed.toList();
+        final purchases = purchasing.allPurchases.reversed.toList();
         final canBuy = auth.can(Permission.createPurchases) && suppliers.suppliers.isNotEmpty;
         void newPurchase() => Navigator.push(context, MaterialPageRoute(builder: (_) => NewPurchaseScreen(purchasing: purchasing, suppliers: suppliers, inventory: inventory, auth: auth)));
         return Scaffold(
@@ -43,6 +43,10 @@ class PurchasesScreen extends StatelessWidget {
                       contentPadding: EdgeInsets.zero,
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseDetailScreen(
                             purchase: p,
+                            purchasing: purchasing,
+                            suppliers: suppliers,
+                            inventory: inventory,
+                            auth: auth,
                             openSupplier: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SupplierDetailScreen(supplier: p.supplier, controller: suppliers, purchasing: purchasing, cash: cash, inventory: inventory, auth: auth))),
                           ))),
                       title: Text(p.supplier.businessName),
@@ -51,8 +55,10 @@ class PurchasesScreen extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(formatNpr(p.total), style: const TextStyle(fontWeight: FontWeight.w600)),
-                          if (p.remainingAmount > 0) Text('Unpaid at purchase ${formatNpr(p.remainingAmount)}', style: const TextStyle(color: Colors.red, fontSize: 12)),
+                          Text(formatNpr(p.total), style: TextStyle(fontWeight: FontWeight.w600, decoration: p.isReversed ? TextDecoration.lineThrough : null)),
+                          if (p.isReversed)
+                            const Text('Reversed', style: TextStyle(color: Colors.red, fontSize: 12))
+                          else if (p.remainingAmount > 0) Text('Unpaid at purchase ${formatNpr(p.remainingAmount)}', style: const TextStyle(color: Colors.red, fontSize: 12)),
                         ],
                       ),
                     );

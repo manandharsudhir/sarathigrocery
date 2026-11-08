@@ -34,6 +34,8 @@ class SaleRepositoryImpl implements SaleRepository {
             'invoiceSeq': s.invoiceSeq,
             'exemptAmount': s.exemptAmount,
             'buyerPan': s.buyerPan,
+            if (s.returnOf != null) 'returnOf': s.returnOf,
+            if (s.corrects != null) 'corrects': s.corrects,
           },
           fromJson: (j) {
             final items = <SaleItem>[];
@@ -70,6 +72,8 @@ class SaleRepositoryImpl implements SaleRepository {
               invoiceSeq: (j['invoiceSeq'] as num?)?.toInt(),
               exemptAmount: toDouble(j['exemptAmount']),
               buyerPan: j['buyerPan'] ?? '',
+              returnOf: j['returnOf'],
+              corrects: j['corrects'],
             );
           },
           merge: (s, j) => s
@@ -149,6 +153,8 @@ class SaleRepositoryImpl implements SaleRepository {
     int? invoiceSeq,
     double exemptAmount = 0,
     String buyerPan = '',
+    String? returnOf,
+    String? corrects,
   }) {
     final sale = Sale(
       id: nextId('S'),
@@ -168,6 +174,8 @@ class SaleRepositoryImpl implements SaleRepository {
       invoiceSeq: invoiceSeq,
       exemptAmount: exemptAmount,
       buyerPan: buyerPan,
+      returnOf: returnOf,
+      corrects: corrects,
     );
     _sales.add(sale);
     return sale;

@@ -45,3 +45,12 @@ String formatQty(double qty) {
   final text = qty.toStringAsFixed(3);
   return text.contains('.') ? text.replaceFirst(RegExp(r'\.?0+$'), '') : text;
 }
+
+/// [d] falls on today's date (device time).
+bool isToday(DateTime d) {
+  final now = DateTime.now();
+  return d.year == now.year && d.month == now.month && d.day == now.day;
+}
+
+/// "14:05" (device time).
+String formatTime(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';

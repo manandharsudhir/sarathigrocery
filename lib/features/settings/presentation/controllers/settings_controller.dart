@@ -48,6 +48,14 @@ class SettingsController extends ChangeNotifier {
 
   bool has(Feature feature) => current.has(feature);
 
+  /// More corrections than this in a week by one person shows in Needs
+  /// Attention (owner only).
+  void setCorrectionAlert(int perWeek) {
+    _repository.update(current.copyWith(correctionAlert: perWeek < 1 ? 1 : perWeek));
+    notifyListeners();
+    AppSignal.instance.ping();
+  }
+
   /// Margin purchases suggest new minimum prices at (cost + %).
   void setMargin(double percent) {
     _repository.update(current.copyWith(marginPercent: percent < 0 ? 0 : percent));

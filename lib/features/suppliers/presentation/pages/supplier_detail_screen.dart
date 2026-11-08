@@ -4,7 +4,10 @@ import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
-import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
+import 'package:sarathigrocery/features/cash/domain/entities/cash_ledger_entry.dart';
+import 'package:sarathigrocery/core/widgets/correction_dialogs.dart';
+import 'package:sarathigrocery/features/accounting/domain/books.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/controllers/purchasing_controller.dart';
 import 'package:sarathigrocery/features/purchasing/presentation/pages/purchase_detail_screen.dart';
@@ -28,8 +31,10 @@ class SupplierDetailScreen extends StatelessWidget {
     return ListenableBuilder(
       listenable: Listenable.merge([controller, purchasing, cash]),
       builder: (context, _) {
-        final purchases = purchasing.purchases.where((p) => p.supplier.id == supplier.id).toList().reversed.toList();
-        final payments = cash.ledger.where((e) => e.type == CashEntryType.supplierPayment && e.reference == supplier.id).toList().reversed.toList();
+        final purchases = purchasing.allPurchases.where((p) => p.supplier.id == supplier.id).toList().reversed.toList();
+        final payments = controller.paymentsTo(supplier);
+        final owner = auth.currentUser?.role == UserRole.owner;
+        final canReverse = auth.can(Permission.reconcileCash);
 
         return Scaffold(
           appBar: AppBar(title: Text(supplier.businessName)),
@@ -60,25 +65,55 @@ class SupplierDetailScreen extends StatelessWidget {
               ...purchases.map((p) => ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text('Purchase ${p.id}'),
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseDetailScreen(purchase: p))),
-                    subtitle: Text(formatDate(p.date)),
-                    trailing: Text(formatNpr(p.total)),
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => PurchaseDetailScreen(purchase: p, purchasing: purchasing, suppliers: controller, inventory: inventory, auth: auth))),
+                    subtitle: Text('${formatDate(p.date)}${p.isReversed ? ' · reversed' : ''}'),
+                    trailing: Text(formatNpr(p.total), style: TextStyle(decoration: p.isReversed ? TextDecoration.lineThrough : null)),
                   )),
               if (purchases.isEmpty) const Text('No purchases yet.'),
               const SizedBox(height: 24),
               Text('Payment History', style: Theme.of(context).textTheme.titleMedium),
-              ...payments.map((e) => ListTile(
+              ...payments.map((e) {
+                final reversal = controller.reversalOf(e);
+                return Opacity(
+                  opacity: reversal == null ? 1 : 0.5,
+                  child: ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(e.note),
-                    subtitle: Text(formatDate(e.date)),
-                    trailing: Text(formatNpr(e.amount)),
-                  )),
+                    subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${formatDate(e.date)} · ${accountName(e.account)}'),
+                      if (reversal != null) ReversedNote('Reversed ${formatDate(reversal.date)}: ${reversal.note.split(' – ').last}'),
+                    ]),
+                    trailing: Text(formatNpr(e.amount), style: TextStyle(decoration: reversal == null ? null : TextDecoration.lineThrough)),
+                    onTap: canReverse && reversal == null ? () => _reversePayment(context, e, owner) : null,
+                  ),
+                );
+              }),
               if (payments.isEmpty) const Text('No payments yet.'),
             ],
           ),
         );
       },
     );
+  }
+
+  Future<void> _reversePayment(BuildContext context, CashLedgerEntry payment, bool owner) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final problem = controller.reverseProblem(payment, owner: owner);
+    if (problem != null) {
+      messenger.showSnackBar(SnackBar(content: Text(problem)));
+      return;
+    }
+    final reason = await askReason(context,
+        title: 'Reverse this payment?',
+        message: '${formatNpr(payment.amount)} to ${supplier.businessName} on ${formatDate(payment.date)}.\n'
+            'The money goes back to ${accountName(payment.account)}, ${supplier.businessName} is owed it again, and the books are reversed.');
+    if (reason == null) return;
+    try {
+      controller.reversePayment(supplier, payment, reason, userName: auth.currentUser?.name ?? '', owner: owner);
+    } on AccountingException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   void _showPaySheet(BuildContext context) {
@@ -109,9 +144,15 @@ class SupplierDetailScreen extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: () {
+                onPressed: () async {
                   final amount = double.tryParse(amountController.text) ?? 0;
                   if (amount <= 0) return;
+                  final same = controller.similarPaymentToday(supplier, amount);
+                  if (same != null &&
+                      !await confirmNotDuplicate(context, '${formatNpr(amount)} to ${supplier.businessName} was already recorded today at ${formatTime(same.date)}.')) {
+                    return;
+                  }
+                  if (!context.mounted) return;
                   controller.recordPayment(supplier, amount, noteController.text, userName: auth.currentUser?.name ?? '', account: account);
                   Navigator.pop(context);
                 },

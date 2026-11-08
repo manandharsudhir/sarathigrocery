@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/core/widgets/signature_pad.dart';
 import 'package:sarathigrocery/core/widgets/status_badge.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/app_user.dart';
 import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
@@ -17,11 +18,14 @@ import 'package:sarathigrocery/features/sales/presentation/controllers/sales_con
 import 'package:sarathigrocery/features/sales/presentation/pages/invoice_screen.dart';
 import 'package:sarathigrocery/features/sales/presentation/pdf/invoice_pdf.dart';
 
-/// Marks [order] delivered and records what the customer paid at the door,
-/// then offers its bill (like after a sale).
+/// Marks [order] delivered and records what the customer paid at the door
+/// (and, for an order billed at dispatch, any goods they refused), then
+/// offers its bill (like after a sale).
 Future<void> showDeliverSheet(BuildContext context, CustomerOrder order, OrderingController ordering, AuthController auth, SalesController sales) async {
   // The tile that opened this may be gone once the order is delivered.
   final navigator = Navigator.of(context);
+  final billed = order.invoiceId != null;
+  final paid = ordering.paidFor(order);
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -29,8 +33,11 @@ Future<void> showDeliverSheet(BuildContext context, CustomerOrder order, Orderin
       customer: order.customer,
       submitLabel: 'Deliver & Collect',
       orderTotal: order.total,
-      orderAlreadyPaid: ordering.paidFor(order),
+      orderAlreadyPaid: billed && order.prepaid > paid ? order.prepaid : paid,
       allowZero: true,
+      alreadyBilled: billed,
+      refusableLines: billed ? [for (final i in order.items) (label: i.product.name, qty: i.qty, unit: i.unit)] : null,
+      refusedValue: (refused) => ordering.refusedValue(order, refused),
       signatureRequired: ordering.signatureRequired,
       onSubmit: (input) async {
         await ordering.deliverAndCollect(order,
@@ -39,6 +46,7 @@ Future<void> showDeliverSheet(BuildContext context, CustomerOrder order, Orderin
             reference: input.reference,
             signature: input.signature,
             signedName: input.signedName,
+            refused: input.refused,
             collector: auth.currentUser!);
         return input.amount == 0 ? 'Delivered on credit.' : 'Delivered — ${formatNpr(input.amount)} recorded.';
       },
@@ -64,12 +72,43 @@ Future<void> showDeliverSheet(BuildContext context, CustomerOrder order, Orderin
   );
 }
 
-/// Shares the order's bill once delivered (if this device has it), else
-/// the order slip.
-Future<void> shareOrder(CustomerOrder order, OrderingController ordering, SalesController sales) async {
-  final sale = order.status == OrderStatus.delivered ? sales.invoiceForOrder(order.id) : null;
-  if (sale != null) return sharePdf(await billPdf(sale, sales.seller, paid: sales.paidOn(sale)), billFileName(sale, null));
-  return sharePdf(await orderSlipPdf(order, sales.seller, paid: ordering.paidFor(order)), orderSlipFileName(order));
+/// The order's bill once issued (if this device has it), else the order
+/// slip. [print]: two pages (customer + shop copy) to the printer.
+Future<void> shareOrder(CustomerOrder order, OrderingController ordering, SalesController sales, {bool print = false}) async {
+  final sale = sales.invoiceForOrder(order.id);
+  final copies = print ? const ['Customer copy', 'Shop copy'] : const [''];
+  if (sale != null) {
+    final bytes = await billPdf(sale, sales.seller, paid: sales.paidOn(sale), returned: sales.returnedOn(sale), copies: copies);
+    return print ? printPdf(bytes, billFileName(sale, null)) : sharePdf(bytes, billFileName(sale, null));
+  }
+  final bytes = await orderSlipPdf(order, sales.seller, paid: ordering.paidFor(order));
+  return print ? printPdf(bytes, orderSlipFileName(order)) : sharePdf(bytes, orderSlipFileName(order));
+}
+
+/// Sends [order] out for delivery (issuing its bill), then offers to print
+/// the two copies that travel with the goods.
+Future<void> dispatchOrder(BuildContext context, CustomerOrder order, OrderingController ordering, AuthController auth, SalesController sales) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context);
+  try {
+    await ordering.dispatch(order, by: auth.currentUser!);
+  } on PaymentException catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    return;
+  }
+  if (!navigator.mounted) return;
+  showDialog(
+    context: navigator.context,
+    builder: (context) => AlertDialog(
+      title: Text('Bill ${order.invoiceNumber} issued'),
+      content: Text('${order.customer.name} · ${formatNpr(order.total)}${order.prepaid > 0 ? '\nPaid ${formatNpr(order.prepaid)} · collect ${formatNpr((order.total - order.prepaid).clamp(0, double.infinity))}' : ''}'),
+      actions: [
+        TextButton(onPressed: () => shareOrder(order, ordering, sales, print: true), child: const Text('Print (2 copies)')),
+        TextButton(onPressed: () => shareOrder(order, ordering, sales), child: const Text('Share')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+      ],
+    ),
+  );
 }
 
 enum _Viewer { staff, deliverer, readOnly }
@@ -101,7 +140,8 @@ class OrderDetailScreen extends StatelessWidget {
       listenable: Listenable.merge([controller, sales]),
       builder: (context, _) {
         final viewer = _viewer;
-        final invoice = order.status == OrderStatus.delivered ? sales.invoiceForOrder(order.id) : null;
+        final invoice = sales.invoiceForOrder(order.id);
+        final user = auth.currentUser!;
         final open = order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled;
         final payments = controller.paymentsFor(order);
 
@@ -109,12 +149,18 @@ class OrderDetailScreen extends StatelessWidget {
           appBar: AppBar(
             title: Text('Order ${order.id}'),
             actions: [
-              if (order.status != OrderStatus.cancelled)
+              if (order.status != OrderStatus.cancelled) ...[
+                IconButton(
+                  tooltip: invoice != null ? 'Print bill (2 copies)' : 'Print order',
+                  icon: const Icon(Icons.print_outlined),
+                  onPressed: () => shareOrder(order, controller, sales, print: true),
+                ),
                 IconButton(
                   tooltip: invoice != null ? 'Share bill' : 'Share order',
                   icon: const Icon(Icons.share),
                   onPressed: () => shareOrder(order, controller, sales),
                 ),
+              ],
             ],
           ),
           body: ListView(
@@ -128,6 +174,8 @@ class OrderDetailScreen extends StatelessWidget {
               Wrap(spacing: 6, runSpacing: 4, children: [
                 StatusBadge(label: order.assignedToId == null ? 'Not assigned' : 'Delivery: ${order.assignedToName}', color: Colors.indigo),
                 StatusBadge(label: 'Customer balance ${formatNpr(order.customer.outstandingBalance)}', color: Colors.blueGrey),
+                if (order.invoiceId != null) StatusBadge(label: 'Bill ${order.invoiceNumber}', color: Colors.teal),
+                if (order.invoiceId != null && order.prepaid > 0) StatusBadge(label: 'Paid before dispatch ${formatNpr(order.prepaid)}', color: Colors.green),
               ]),
               const SizedBox(height: 16),
               if (order.status != OrderStatus.cancelled) _StatusTimeline(current: order.status) else const Text('This order was cancelled.', style: TextStyle(color: Colors.red)),
@@ -164,9 +212,22 @@ class OrderDetailScreen extends StatelessWidget {
                   ),
                 ),
               if (order.placedByStaffName.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text('Order taken by ${order.placedByStaffName}')),
+              if (order.status == OrderStatus.delivered && order.invoiceId != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: order.shopCopyAt != null
+                      ? Text('Signed shop copy received by ${order.shopCopyByName} · ${formatDate(order.shopCopyAt!)}')
+                      : user.can(Permission.reconcileCash)
+                          ? OutlinedButton.icon(
+                              icon: const Icon(Icons.fact_check_outlined),
+                              label: const Text('Signed shop copy received'),
+                              onPressed: () => runPaymentAction(context, () => controller.markShopCopyReceived(order, by: user)),
+                            )
+                          : const Text('Signed shop copy not back yet.', style: TextStyle(color: Colors.orange)),
+                ),
               if (payments.isNotEmpty) ...[
                 const SizedBox(height: 24),
-                Text('Payments at delivery', style: Theme.of(context).textTheme.titleMedium),
+                Text('Payments', style: Theme.of(context).textTheme.titleMedium),
                 for (final p in payments) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: PaymentReceipt(payment: p, businessName: controller.businessName)),
               ],
               const SizedBox(height: 24),
@@ -234,6 +295,27 @@ class _StaffActions extends StatelessWidget {
           onChanged: (id) => controller.assign(order, deliverers.where((d) => d.id == id).firstOrNull, by: user),
         ),
         const SizedBox(height: 12),
+        if (order.invoiceId == null && user.can(Permission.recordPayments)) ...[
+          OutlinedButton.icon(
+            icon: const Icon(Icons.payments_outlined),
+            label: const Text('Record payment before dispatch'),
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              builder: (_) => CollectPaymentForm(
+                customer: order.customer,
+                submitLabel: 'Record Payment',
+                orderTotal: order.total,
+                orderAlreadyPaid: controller.paidFor(order),
+                onSubmit: (input) async {
+                  controller.prepay(order, input.amount, method: input.method, reference: input.reference, collector: user);
+                  return 'Payment recorded for order ${order.id}.';
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         Row(
           children: [
             if (nextStatus != null)
@@ -241,16 +323,38 @@ class _StaffActions extends StatelessWidget {
                 child: NextOrderButton(order: order, ordering: controller, auth: auth, sales: sales),
               ),
             if (nextStatus != null) const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => controller.advanceOrderStatus(order, OrderStatus.cancelled, userName: user.name, userId: user.id),
-                child: const Text('Cancel Order'),
+            if (order.invoiceId == null)
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => controller.advanceOrderStatus(order, OrderStatus.cancelled, userName: user.name, userId: user.id),
+                  child: const Text('Cancel Order'),
+                ),
+              )
+            else if (user.can(Permission.cancelSales))
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _notDelivered(context, user),
+                  child: const Text('Not delivered'),
+                ),
               ),
-            ),
           ],
         ),
       ],
     );
+  }
+}
+
+extension on _StaffActions {
+  Future<void> _notDelivered(BuildContext context, AppUser user) async {
+    final reason = await promptText(context, title: 'Not delivered', label: 'Why? (customer away, refused all, ...)');
+    if (reason == null || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await controller.notDelivered(order, reason, by: user);
+      messenger.showSnackBar(const SnackBar(content: Text('Bill cancelled; the order is back to Ready. Destroy the printed copies.')));
+    } on PaymentException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 }
 
@@ -265,7 +369,6 @@ class _DelivererActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = auth.currentUser!;
     if (order.status == OrderStatus.outForDelivery) {
       return FilledButton.icon(
         icon: const Icon(Icons.handshake_outlined),
@@ -276,7 +379,7 @@ class _DelivererActions extends StatelessWidget {
     if (order.status == OrderStatus.ready) {
       return FilledButton.icon(
         icon: const Icon(Icons.local_shipping_outlined),
-        onPressed: () => controller.advanceOrderStatus(order, OrderStatus.outForDelivery, userName: user.name, userId: user.id),
+        onPressed: () => dispatchOrder(context, order, controller, auth, sales),
         label: const Text('Start Delivery'),
       );
     }
@@ -306,10 +409,16 @@ class NextOrderButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final next = nextOrderStatus(order.status)!;
     return FilledButton(
-      onPressed: () => next == OrderStatus.delivered
-          ? showDeliverSheet(context, order, ordering, auth, sales)
-          : ordering.advanceOrderStatus(order, next, userName: auth.currentUser?.name ?? '', userId: auth.currentUser?.id),
-      child: Text(next == OrderStatus.delivered ? 'Deliver & Collect' : 'Next: ${orderStatusLabel(next)}'),
+      onPressed: () => switch (next) {
+        OrderStatus.delivered => showDeliverSheet(context, order, ordering, auth, sales),
+        OrderStatus.outForDelivery => dispatchOrder(context, order, ordering, auth, sales),
+        _ => ordering.advanceOrderStatus(order, next, userName: auth.currentUser?.name ?? '', userId: auth.currentUser?.id),
+      },
+      child: Text(switch (next) {
+        OrderStatus.delivered => 'Deliver & Collect',
+        OrderStatus.outForDelivery => 'Dispatch & Bill',
+        _ => 'Next: ${orderStatusLabel(next)}',
+      }),
     );
   }
 }

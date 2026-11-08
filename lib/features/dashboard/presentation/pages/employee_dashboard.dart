@@ -250,7 +250,7 @@ class EmployeeDashboard extends StatelessWidget {
           ],
         ),
       ),
-      if (overdue > 0 || suppliersOwed > 0 || toReceive.isNotEmpty) ...[
+      if (overdue > 0 || suppliersOwed > 0 || toReceive.isNotEmpty || ordering.shopCopiesMissing.isNotEmpty) ...[
         const SliverToBoxAdapter(child: SectionHeader('Needs Attention')),
         SliverList.list(
           children: [
@@ -260,7 +260,15 @@ class EmployeeDashboard extends StatelessWidget {
                 color: Colors.orange,
                 label: '${formatNpr(toReceive.fold(0.0, (s, p) => s + p.amount))} with staff, not yet counted in',
                 actionLabel: 'Count cash in',
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentsScreen(payments: customers.payments, auth: auth))),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PaymentsScreen(payments: customers.payments, auth: auth, ordering: ordering))),
+              ),
+            if (ordering.shopCopiesMissing case final missing when missing.isNotEmpty)
+              AttentionTile(
+                icon: Icons.fact_check_outlined,
+                color: Colors.orange,
+                label: '${missing.length} signed shop ${missing.length == 1 ? 'copy hasn\'t' : 'copies haven\'t'} come back from delivery',
+                actionLabel: 'Open',
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => OrderDetailScreen(order: missing.first, controller: ordering, auth: auth, sales: sales, staffView: true))),
               ),
             if (overdue > 0)
               AttentionTile(

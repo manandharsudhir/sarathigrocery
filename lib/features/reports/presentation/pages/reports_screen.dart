@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:sarathigrocery/core/utils/bs_date.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
+import 'package:sarathigrocery/features/audit/domain/entities/audit_log_entry.dart';
 import 'package:sarathigrocery/features/reports/domain/daily_summary.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/adjustment_type.dart';
 import 'package:sarathigrocery/features/inventory/domain/entities/product.dart';
@@ -31,7 +32,11 @@ class ReportsScreen extends StatelessWidget {
     required this.accounts,
     required this.daily,
     required this.onExportDaily,
+    this.corrections,
   });
+
+  /// Owner only (the audit log): every reversal and correction.
+  final List<AuditLogEntry> Function()? corrections;
 
   final SalesController sales;
   final PurchasingController purchasing;
@@ -66,6 +71,7 @@ class ReportsScreen extends StatelessWidget {
       ('Payment Report', Icons.payments_outlined, (_) => _PaymentReportScreen(cash: cash)),
       ('Best-Selling Products', Icons.star_outline, (_) => _BestSellingScreen(sales: sales)),
       ('Employee Performance', Icons.badge_outlined, (_) => _EmployeePerformanceScreen(sales: sales)),
+      if (corrections != null) ('Corrections', Icons.history_edu_outlined, (_) => CorrectionsScreen(corrections: corrections!)),
     ];
 
     return Scaffold(
@@ -90,6 +96,72 @@ class ReportsScreen extends StatelessWidget {
 /// Simple start/end date range row. Defaults to the last [days] days (a
 /// month); a
 /// longer pick than [maxDays] keeps its end and is cut to [maxDays].
+/// Every reversal and correction: when, who, what and why (owner review).
+class CorrectionsScreen extends StatefulWidget {
+  const CorrectionsScreen({super.key, required this.corrections});
+
+  final List<AuditLogEntry> Function() corrections;
+
+  @override
+  State<CorrectionsScreen> createState() => _CorrectionsScreenState();
+}
+
+class _CorrectionsScreenState extends State<CorrectionsScreen> {
+  DateTimeRange? _range;
+  String? _person;
+
+  @override
+  Widget build(BuildContext context) {
+    final all = widget.corrections().where((e) => _range == null || _inRange(e.date, _range!)).toList();
+    final people = {for (final e in all) e.userName}.toList()..sort();
+    final rows = all.where((e) => _person == null || e.userName == _person).toList();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Corrections')),
+      body: Column(children: [
+        _DateRangeBar(onChanged: (r) => setState(() => _range = r)),
+        if (people.length > 1)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              for (final p in people)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: FilterChip(
+                    label: Text('$p (${all.where((e) => e.userName == p).length})'),
+                    selected: _person == p,
+                    onSelected: (on) => setState(() => _person = on ? p : null),
+                  ),
+                ),
+            ]),
+          ),
+        Expanded(
+          child: rows.isEmpty
+              ? const Center(child: Text('No corrections in this period.'))
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: rows.length,
+                  separatorBuilder: (_, _) => const Divider(),
+                  itemBuilder: (context, i) {
+                    final e = rows[i];
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${e.action} · ${e.entityId}'),
+                      subtitle: Text([
+                        '${formatDate(e.date)} ${formatTime(e.date)} · ${e.userName}',
+                        if (e.oldValue.isNotEmpty) e.oldValue,
+                        if (e.newValue.isNotEmpty) e.newValue,
+                      ].join('\n')),
+                    );
+                  },
+                ),
+        ),
+      ]),
+    );
+  }
+}
+
 class _DateRangeBar extends StatefulWidget {
   const _DateRangeBar({required this.onChanged, this.days = 31, this.maxDays});
 

@@ -11,6 +11,8 @@ import 'package:sarathigrocery/features/auth/presentation/controllers/auth_contr
 import 'package:sarathigrocery/features/cash/domain/entities/cash_entry_type.dart';
 import 'package:sarathigrocery/features/cash/domain/entities/cash_ledger_entry.dart';
 import 'package:sarathigrocery/features/cash/presentation/controllers/cash_controller.dart';
+import 'package:sarathigrocery/core/widgets/correction_dialogs.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/permission.dart';
 
 /// Money: every account's cash book, expenses, and the owners' money
 /// (capital, drawings, loans, dividends).
@@ -36,7 +38,7 @@ class CashScreen extends StatelessWidget {
           ),
           body: TabBarView(
             children: [
-              _LedgerTab(controller: controller),
+              _LedgerTab(controller: controller, auth: auth),
               _ExpensesTab(controller: controller, auth: auth),
               _OwnersTab(accounting: accounting),
             ],
@@ -96,14 +98,38 @@ class CashScreen extends StatelessWidget {
   }
 }
 
+/// Reverse [line] (an expense or money move typed by mistake) after asking why.
+Future<void> reverseCashLine(BuildContext context, CashController controller, AuthController auth, CashLedgerEntry line) async {
+  final owner = auth.currentUser?.role == UserRole.owner;
+  final messenger = ScaffoldMessenger.of(context);
+  final problem = controller.reverseProblem(line, owner: owner);
+  if (problem != null) {
+    messenger.showSnackBar(SnackBar(content: Text(problem)));
+    return;
+  }
+  final reason = await askReason(context,
+      title: 'Reverse this entry?',
+      message: '${line.note}: ${formatNpr(line.amount)}.\nThe money goes back to ${accountName(line.account)} and the books are reversed. The entry stays on record, marked reversed.');
+  if (reason == null) return;
+  try {
+    controller.reverseEntry(line, reason, userName: auth.currentUser?.name ?? '', owner: owner);
+    messenger.showSnackBar(const SnackBar(content: Text('Reversed. Enter it again if it was only a typo.')));
+  } on AccountingException catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text(e.message)));
+  }
+}
+
 class _LedgerTab extends StatelessWidget {
-  const _LedgerTab({required this.controller});
+  const _LedgerTab({required this.controller, required this.auth});
 
   final CashController controller;
+  final AuthController auth;
 
   @override
   Widget build(BuildContext context) {
-    final entries = controller.ledger.reversed.toList();
+    // Corrections show on the line they undo, not as lines of their own.
+    final entries = controller.ledger.reversed.where((e) => !e.isReversal).toList();
+    final canReverse = auth.can(Permission.reconcileCash);
     return Column(
       children: [
         Padding(
@@ -126,13 +152,22 @@ class _LedgerTab extends StatelessWidget {
                   separatorBuilder: (_, _) => const Divider(),
                   itemBuilder: (context, index) {
                     final e = entries[index];
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(e.note),
-                      subtitle: Text('${accountName(e.account)} · ${_ledgerLabel(e)} · ${formatDate(e.date)}'),
-                      trailing: Text(
-                        '${e.isOutflow ? '-' : '+'}${formatNpr(e.amount)}',
-                        style: TextStyle(color: e.isOutflow ? Colors.red : Colors.green, fontWeight: FontWeight.w600),
+                    final reversal = controller.reversalOf(e);
+                    return Opacity(
+                      opacity: reversal == null ? 1 : 0.5,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(e.note),
+                        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('${accountName(e.account)} · ${_ledgerLabel(e)} · ${formatDate(e.date)}'),
+                          if (reversal != null) ReversedNote('Reversed ${formatDate(reversal.date)}: ${reversal.note.split(' – ').last}'),
+                        ]),
+                        trailing: Text(
+                          '${e.isOutflow ? '-' : '+'}${formatNpr(e.amount)}',
+                          style: TextStyle(
+                              color: e.isOutflow ? Colors.red : Colors.green, fontWeight: FontWeight.w600, decoration: reversal == null ? null : TextDecoration.lineThrough),
+                        ),
+                        onTap: canReverse && reversal == null && CashController.reversible(e) ? () => reverseCashLine(context, controller, auth, e) : null,
                       ),
                     );
                   },
@@ -161,7 +196,8 @@ class _ExpensesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final expenses = controller.expenses.reversed.toList();
+    final expenses = controller.allExpenses.reversed.toList();
+    final canReverse = auth.can(Permission.reconcileCash);
     if (expenses.isEmpty) {
       return EmptyState(
         message: 'No expenses logged yet.',
@@ -175,11 +211,21 @@ class _ExpensesTab extends StatelessWidget {
       separatorBuilder: (_, _) => const Divider(),
       itemBuilder: (context, index) {
         final e = expenses[index];
-        return ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(e.category),
-          subtitle: Text('${e.note.isEmpty ? 'No note' : e.note} · ${formatDate(e.date)}'),
-          trailing: Text('-${formatNpr(e.amount)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+        final line = controller.lineOf(e);
+        final reversal = line == null ? null : controller.reversalOf(line);
+        return Opacity(
+          opacity: reversal == null ? 1 : 0.5,
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(e.category),
+            subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${e.note.isEmpty ? 'No note' : e.note} · ${formatDate(e.date)}'),
+              if (reversal != null) ReversedNote('Reversed ${formatDate(reversal.date)}: ${reversal.note.split(' – ').last}'),
+            ]),
+            trailing: Text('-${formatNpr(e.amount)}',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600, decoration: reversal == null ? null : TextDecoration.lineThrough)),
+            onTap: canReverse && line != null && reversal == null ? () => reverseCashLine(context, controller, auth, line) : null,
+          ),
         );
       },
     );
@@ -344,9 +390,16 @@ void showAddExpenseSheet(BuildContext context, CashController controller, {Strin
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: () {
+                onPressed: () async {
+                  final amount = double.tryParse(amountController.text) ?? 0;
+                  final same = controller.similarExpenseToday(category, amount);
+                  if (same != null &&
+                      !await confirmNotDuplicate(context, '$category ${formatNpr(amount)} was already entered today at ${formatTime(same.date)}${same.createdByName.isEmpty ? '' : ' by ${same.createdByName}'}.')) {
+                    return;
+                  }
+                  if (!context.mounted) return;
                   try {
-                    controller.addExpense(category, double.tryParse(amountController.text) ?? 0, noteController.text, createdByName: userName, account: account);
+                    controller.addExpense(category, amount, noteController.text, createdByName: userName, account: account);
                     Navigator.pop(context);
                   } on AccountingException catch (e) {
                     setSheetState(() => error = e.message);
