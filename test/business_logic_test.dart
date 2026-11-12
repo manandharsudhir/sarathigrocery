@@ -16,6 +16,7 @@ import 'package:sarathigrocery/features/auth/domain/entities/app_user.dart';
 import 'package:sarathigrocery/core/data/remote_store.dart';
 import 'package:sarathigrocery/core/widgets/signature_pad.dart';
 import 'package:sarathigrocery/features/customers/presentation/pdf/payment_documents.dart';
+import 'package:sarathigrocery/features/customers/domain/entities/customer_statement.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/auth_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/ordering/domain/entities/customer_order.dart';
@@ -168,6 +169,47 @@ void main() {
           throwsA(isA<PaymentException>()), reason: 'a walk-in pays in full');
       await pumpEventQueue();
       expect(scope.accounting.booksBalanced, isTrue);
+    });
+
+    test('customer statement: full history (cash + udharo, items, returns) and amount due add up', () async {
+      final scope = await signedIn(UserRole.owner);
+      final me = scope.auth.currentUser!;
+      final p = scope.inventory.products.first;
+      final customer = scope.customers.createCustomer(name: 'Ledger Shop', phone: '9822222222', location: 'Patan', creditLimit: 1000000, openingBalance: 1000, by: me);
+      List<SaleItem> items(double qty) => [SaleItem(product: p, qty: qty, unitPrice: p.unitPrice)];
+
+      final udharo = await scope.sales.sell(items: items(3), isCredit: true, customer: customer, userName: me.name, userId: me.id);
+      await pumpEventQueue();
+      final cash = await scope.sales.sell(items: items(2), isCredit: false, customer: customer, userName: me.name, userId: me.id);
+      await pumpEventQueue();
+      await scope.sales.returnItems(udharo, {0: 1}, 'damaged', userName: me.name, userId: me.id);
+      await pumpEventQueue();
+      final partPaid = await scope.sales.sell(
+          items: items(4), isCredit: true, customer: customer, userName: me.name, userId: me.id, paidNow: (amount: p.unitPrice, method: PaymentMethod.cash, reference: '', collector: me));
+      await pumpEventQueue();
+
+      final all = scope.payments.fullStatementFor(customer);
+      expect(all.broughtForward, 1000);
+      expect(all.closing, closeTo(customer.outstandingBalance, 0.01));
+      expect(all.broughtForward + all.bought - all.returned - all.paid, closeTo(all.closing, 0.01));
+      expect(all.lines.where((l) => l.sale != null).map((l) => l.sale!.id), [udharo.id, cash.id, partPaid.id], reason: 'returns fold under their bill');
+      expect(all.lines.firstWhere((l) => l.sale?.id == cash.id).change, 0, reason: 'cash bills never move the balance');
+      expect(all.lines.firstWhere((l) => l.sale?.id == udharo.id).returnedAmount, closeTo(p.unitPrice, 0.01));
+
+      final range = scope.payments.fullStatementFor(customer, from: cash.date);
+      expect(range.lines.any((l) => l.sale?.id == udharo.id), isFalse);
+      expect(range.broughtForward + range.bought - range.returned - range.paid, closeTo(range.closing, 0.01));
+      expect(range.closing, closeTo(customer.outstandingBalance, 0.01));
+
+      final statement = scope.payments.statementFor(customer);
+      final due = amountDue(statement);
+      expect(due.total, closeTo(customer.outstandingBalance, 0.01));
+      expect(due.bills.map((b) => b.sale.id), [udharo.id, partPaid.id]);
+
+      final full = await fullStatementPdf(customer, all, businessName: 'Test Shop', period: 'All time');
+      final duePdf = await amountDuePdf(customer, statement, businessName: 'Test Shop');
+      expect(String.fromCharCodes(full.take(5)), '%PDF-');
+      expect(String.fromCharCodes(duePdf.take(5)), '%PDF-');
     });
   });
 
@@ -1354,7 +1396,7 @@ void main() {
       final shop = cashier.customers.customers.first;
       final payment = cashier.payments.record(shop, 1500, method: PaymentMethod.cash, signature: testSignature(), signedName: 'Hari', collector: cashier.auth.currentUser!);
       final receipt = await paymentReceiptPdf(payment, businessName: 'Test Shop');
-      final statement = await statementPdf(shop, cashier.payments.statementFor(shop), businessName: 'Test Shop');
+      final statement = await fullStatementPdf(shop, cashier.payments.fullStatementFor(shop), businessName: 'Test Shop', period: 'All time');
       expect(String.fromCharCodes(receipt.take(5)), '%PDF-');
       expect(String.fromCharCodes(statement.take(5)), '%PDF-');
     });

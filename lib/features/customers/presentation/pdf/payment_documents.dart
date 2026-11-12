@@ -10,6 +10,7 @@ import 'package:sarathigrocery/core/widgets/signature_pad.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_statement.dart';
+import 'package:sarathigrocery/features/sales/domain/entities/sale.dart';
 
 /// Printable receipts/statements for customers — shared as
 /// PDF to WhatsApp/Viber/email, or printed from the share sheet.
@@ -87,28 +88,87 @@ Future<Uint8List> paymentReceiptPdf(CustomerPayment p, {required String business
   return doc.save();
 }
 
-Future<Uint8List> statementPdf(Customer customer, CustomerStatement statement, {required String businessName}) {
+const _notTaxInvoice = 'Statement of account, not a tax invoice.';
+
+String _change(double c) => c == 0 ? '-' : '${c > 0 ? '+' : '-'}${formatNpr(c.abs())}';
+
+/// Item lines of [sale] as indented table rows: product, qty × price, total.
+List<List<String>> _itemRows(Sale sale, {String prefix = ''}) => [
+      for (final i in sale.items) ['', '    $prefix${i.product.name}', '${formatQty(i.qty)} ${i.unit} x ${formatNpr(i.unitPrice)}', formatNpr(i.lineTotal), ''],
+    ];
+
+/// Every bill (with items) and payment in [period], running balance.
+Future<Uint8List> fullStatementPdf(Customer customer, FullStatement statement, {required String businessName, required String period}) {
   final doc = pw.Document();
   doc.addPage(pw.MultiPage(
     pageFormat: PdfPageFormat.a4,
     build: (_) => [
-      _header(businessName, 'Statement · ${customer.name} · ${formatDate(DateTime.now())}'),
-      _row('Current balance', formatNpr(customer.outstandingBalance)),
-      _row('Credit limit', formatNpr(customer.creditLimit)),
-      if (!statement.balanced) pw.Text("Note: balance doesn't add up, check records (difference ${formatNpr(statement.unexplainedDifference)}).", style: const pw.TextStyle(color: PdfColors.red)),
+      _header(businessName, 'Statement · ${customer.name} · $period'),
+      pw.Text(_notTaxInvoice, style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 9)),
+      pw.SizedBox(height: 8),
+      _row('Brought forward', formatNpr(statement.broughtForward)),
+      _row('Bought', formatNpr(statement.bought)),
+      if (statement.returned > 0) _row('Returned', formatNpr(statement.returned)),
+      _row('Paid', formatNpr(statement.paid)),
+      _row('Closing balance', formatNpr(statement.closing)),
       pw.SizedBox(height: 12),
       pw.TableHelper.fromTextArray(
-        headers: ['Date', 'Entry', 'Change', 'Balance'],
-        cellAlignments: {2: pw.Alignment.centerRight, 3: pw.Alignment.centerRight},
+        headers: ['Date', 'Entry', 'Qty x price', 'Amount', 'Balance'],
+        cellAlignments: {3: pw.Alignment.centerRight, 4: pw.Alignment.centerRight},
         data: [
-          ['', 'Old udharo (before app)', '', formatNpr(statement.opening)],
-          for (final l in statement.lines)
+          ['', 'Brought forward', '', '', formatNpr(statement.broughtForward)],
+          for (final l in statement.lines) ...[
             [
               formatDate(l.date),
               l.payment == null ? l.title : '${l.title} · ${_verification(l.payment!)}',
-              l.change == 0 ? '-' : '${l.change > 0 ? '+' : '-'}${formatNpr(l.change.abs())}',
+              '',
+              l.sale != null ? formatNpr(l.sale!.total) : _change(l.change),
               formatNpr(l.balance),
             ],
+            if (l.sale != null) ..._itemRows(l.sale!),
+            for (final r in l.returns) ...[
+              ['', '    Returned ${formatDate(r.date)}${r.invoiceNumber == null ? '' : ' · credit note ${r.invoiceNumber}'}', '', formatNpr(r.total), ''],
+              ..._itemRows(r, prefix: '  '),
+            ],
+          ],
+        ],
+      ),
+    ],
+  ));
+  return doc.save();
+}
+
+/// What the customer still owes now: old udharo left, then each unpaid bill
+/// with its items, paid so far and due.
+Future<Uint8List> amountDuePdf(Customer customer, CustomerStatement statement, {required String businessName}) {
+  final due = amountDue(statement);
+  final doc = pw.Document();
+  doc.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    build: (_) => [
+      _header(businessName, 'Amount due · ${customer.name} · ${formatDate(DateTime.now())}'),
+      pw.Text(_notTaxInvoice, style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 9)),
+      pw.SizedBox(height: 8),
+      _row('Total due', formatNpr(due.total)),
+      if ((customer.outstandingBalance - due.total).abs() > 0.5) _row('Current balance', formatNpr(customer.outstandingBalance)),
+      pw.SizedBox(height: 12),
+      pw.TableHelper.fromTextArray(
+        headers: ['Date', 'Bill / item', 'Qty x price', 'Amount', 'Due'],
+        cellAlignments: {3: pw.Alignment.centerRight, 4: pw.Alignment.centerRight},
+        data: [
+          if (due.openingDue > 0) ['', 'Old udharo (before app)', '', '', formatNpr(due.openingDue)],
+          for (final b in due.bills) ...[
+            [
+              formatDate(b.sale.date),
+              '${b.sale.orderId != null ? 'Order ${b.sale.orderId} invoice' : 'Bill ${b.sale.invoiceNumber ?? b.sale.id}'}'
+                  '${b.paid > 0 ? ' · paid ${formatNpr(b.paid)}' : ''}${b.returned > 0 ? ' · returned ${formatNpr(b.returned)}' : ''}',
+              '',
+              formatNpr(b.sale.total),
+              formatNpr(b.due),
+            ],
+            ..._itemRows(b.sale),
+          ],
+          ['', 'Total due', '', '', formatNpr(due.total)],
         ],
       ),
     ],

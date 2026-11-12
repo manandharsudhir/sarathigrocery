@@ -38,6 +38,9 @@ class PaymentsController extends ChangeNotifier {
 
   CustomerStatement statementFor(Customer customer) => buildStatement(customer, _sales.sales, payments);
 
+  FullStatement fullStatementFor(Customer customer, {DateTime? from, DateTime? to}) =>
+      buildFullStatement(customer, statementFor(customer), _sales.sales, from: from, to: to);
+
   /// Collected but not yet received into the till / verified, oldest first.
   List<CustomerPayment> get pendingHandover => payments.where((p) => p.isPendingHandover).toList();
 
