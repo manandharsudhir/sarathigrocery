@@ -68,9 +68,9 @@ class EmployeeDashboard extends StatelessWidget {
     final todaysSales = sales.sales
         .where((s) =>
             s.status == SaleStatus.completed &&
-            s.date.year == today.year &&
-            s.date.month == today.month &&
-            s.date.day == today.day)
+            s.soldDate.year == today.year &&
+            s.soldDate.month == today.month &&
+            s.soldDate.day == today.day)
         .toList();
 
     // Oldest first — the order that has been waiting longest is the one to

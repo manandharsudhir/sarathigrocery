@@ -16,6 +16,8 @@ import 'package:sarathigrocery/features/auth/domain/entities/app_user.dart';
 import 'package:sarathigrocery/core/data/remote_store.dart';
 import 'package:sarathigrocery/core/widgets/signature_pad.dart';
 import 'package:sarathigrocery/features/customers/presentation/pdf/payment_documents.dart';
+import 'package:sarathigrocery/features/sales/domain/entities/sale.dart';
+import 'package:sarathigrocery/features/sales/presentation/widgets/cart_editor.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_statement.dart';
 import 'package:sarathigrocery/features/auth/domain/repositories/auth_repository.dart';
 import 'package:sarathigrocery/features/customers/domain/entities/customer_payment.dart';
@@ -398,6 +400,26 @@ void main() {
       expect(flour.sellUnit(flour.saleUnit).label, 'kg');
       owner.sales.recordSale(items: [SaleItem(product: flour, qty: 30, unitPrice: 85, unit: 'kg')], isCredit: false, userName: 'Owner');
       expect(flour.describeQty(flour.stockQty), '9.5 sack (570 kg)');
+    });
+
+    test('a smaller unit added after stock is in: the base stays, the new unit is a fraction of it', () async {
+      final owner = await signedIn(UserRole.owner);
+      // Bought 1 sack, contents unknown yet.
+      final sugar = owner.inventory.createProduct(
+          name: 'Sugar', category: 'General', unit: ProductUnit.custom, customUnitLabel: 'sack', unitPrice: 3300, purchasePrice: 3000, stockQty: 1, reorderLevel: 0);
+      // Later: 1 sack = 30 packet, no packet price yet.
+      final plan = planUnits('sack', 3300, [(name: 'packet', perPrimary: 30, bigger: false, price: 0)], keepBase: 'sack');
+      expect(plan.base, 'sack');
+      expect(plan.packs.single.label, 'packet');
+      expect(plan.packs.single.size, closeTo(1 / 30, 1e-12));
+      owner.inventory.updateProduct(sugar, userName: 'Owner', packs: plan.packs);
+      expect(sugar.floorFor('packet'), closeTo(100, 0.01), reason: 'no price yet: the floor is the cost per packet');
+
+      List<CartLine> lines(double qty) => [CartLine(sugar, sugar.sellUnit('packet'), 110)..qty.text = formatQty(qty)];
+      owner.sales.recordSale(items: [SaleItem(product: sugar, qty: 3, unitPrice: 110, unit: 'packet', size: plan.packs.single.size)], isCredit: false, userName: 'Owner');
+      expect(sugar.describeQty(sugar.stockQty), '0.9 sack (27 packet)');
+      expect(cartProblem(lines(27), checkStock: true), isNull, reason: 'the last packet is still sellable');
+      expect(cartProblem(lines(28), checkStock: true), isNotNull);
     });
 
     test('a product sold before its first purchase is flagged until a purchase gives it a cost', () async {
@@ -1524,6 +1546,13 @@ void main() {
       expect(customer.outstandingBalance, closeTo(balance - 100, 0.01));
       expect(owner.sales.paidOn(right), closeTo(100, 0.01), reason: 'the payment on the old bill pays the new one');
       expect(owner.sales.canCorrect(wrong), isFalse);
+      expect(right.soldDate, wrong.date, reason: 'an edit stays on the day the goods were sold');
+      final again = await owner.sales.sell(items: [SaleItem(product: rice, qty: 1, unitPrice: 100)], isCredit: true, customer: customer, userName: me.name, userId: me.id, corrects: right, reason: 'only 1');
+      expect(again.soldDate, wrong.date, reason: 'editing an edit keeps the first day');
+      expect(again.date.isBefore(wrong.date), isFalse, reason: 'date is when this version was issued');
+      final yesterday = Sale(id: 'S-old', date: DateTime.now().subtract(const Duration(days: 1)), items: [SaleItem(product: rice, qty: 1, unitPrice: 100)], isCredit: false);
+      expect(owner.sales.canCorrect(yesterday), isTrue);
+      expect(owner.sales.canCorrect(yesterday, owner: false), isFalse, reason: 'staff edit only today\'s sales');
       expect(() => owner.sales.sell(items: [SaleItem(product: rice, qty: 1, unitPrice: 100)], isCredit: false, userName: me.name, corrects: right, reason: ' '),
           throwsA(isA<AccountingException>()), reason: 'a reason is required');
       await pumpEventQueue();

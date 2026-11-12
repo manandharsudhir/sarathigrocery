@@ -36,6 +36,7 @@ class SaleRepositoryImpl implements SaleRepository {
             'buyerPan': s.buyerPan,
             if (s.returnOf != null) 'returnOf': s.returnOf,
             if (s.corrects != null) 'corrects': s.corrects,
+            if (s.soldOn != null) 'soldOn': toMillis(s.soldOn!),
           },
           fromJson: (j) {
             final items = <SaleItem>[];
@@ -73,6 +74,7 @@ class SaleRepositoryImpl implements SaleRepository {
               exemptAmount: toDouble(j['exemptAmount']),
               buyerPan: j['buyerPan'] ?? '',
               returnOf: j['returnOf'],
+              soldOn: j['soldOn'] == null ? null : fromMillis(j['soldOn']),
               corrects: j['corrects'],
             );
           },
@@ -126,7 +128,7 @@ class SaleRepositoryImpl implements SaleRepository {
   double get todayRevenue {
     final today = DateTime.now();
     return sales
-        .where((s) => s.status == SaleStatus.completed && s.date.year == today.year && s.date.month == today.month && s.date.day == today.day)
+        .where((s) => s.status == SaleStatus.completed && s.soldDate.year == today.year && s.soldDate.month == today.month && s.soldDate.day == today.day)
         .fold(0.0, (sum, s) => sum + s.total);
   }
 
@@ -155,6 +157,7 @@ class SaleRepositoryImpl implements SaleRepository {
     String buyerPan = '',
     String? returnOf,
     String? corrects,
+    DateTime? soldOn,
   }) {
     final sale = Sale(
       id: nextId('S'),
@@ -176,6 +179,7 @@ class SaleRepositoryImpl implements SaleRepository {
       buyerPan: buyerPan,
       returnOf: returnOf,
       corrects: corrects,
+      soldOn: soldOn,
     );
     _sales.add(sale);
     return sale;

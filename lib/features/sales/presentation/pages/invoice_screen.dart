@@ -30,7 +30,9 @@ class InvoiceScreen extends StatelessWidget {
     final paid = creditNote == null ? sales.paidOn(sale) : null;
     final canCollect = paid != null && sale.total - sales.returnedOn(sale) - paid > 0.005 && (auth?.can(Permission.recordPayments) ?? false);
     final returned = creditNote == null ? sales.returnedOn(sale) : 0.0;
-    final c = billContent(sale, seller, creditNote: creditNote, paid: paid, returned: returned);
+    final before = sale.corrects == null ? null : sales.sales.where((s) => s.id == sale.corrects).firstOrNull;
+    final replaces = before == null ? null : before.invoiceNumber ?? before.id;
+    final c = billContent(sale, seller, creditNote: creditNote, paid: paid, returned: returned, replaces: replaces);
     return Scaffold(
       floatingActionButton: canCollect
           ? FloatingActionButton.extended(heroTag: null, icon: const Icon(Icons.payments_outlined), label: const Text('Collect'), onPressed: () => collectOnBill(context, sale, sales, auth!))
@@ -41,7 +43,7 @@ class InvoiceScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Share PDF',
             icon: const Icon(Icons.share),
-            onPressed: () async => sharePdf(await billPdf(sale, seller, creditNote: creditNote, paid: paid, returned: returned), billFileName(sale, creditNote)),
+            onPressed: () async => sharePdf(await billPdf(sale, seller, creditNote: creditNote, paid: paid, returned: returned, replaces: replaces), billFileName(sale, creditNote)),
           ),
         ],
       ),
@@ -52,6 +54,15 @@ class InvoiceScreen extends StatelessWidget {
           const SizedBox(height: 8),
           for (final (k, v) in c.head) Text('$k: $v'),
           Text('Status: ${sale.status.name}${sale.flaggedForApproval ? ' (over credit limit)' : ''}'),
+          if (before != null && creditNote == null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.history),
+                label: const Text('Before edit'),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => InvoiceScreen(sale: before, sales: sales, auth: auth))),
+              ),
+            ),
           const Divider(height: 32),
           for (final (name, qty, total) in c.lines)
             Padding(
@@ -80,7 +91,7 @@ class InvoiceScreen extends StatelessWidget {
 /// "Ram Stores 2082-07-17 Cash 2082-83-15.pdf": customer, BS date, how it was
 /// paid, then the bill number so same-day bills don't clash.
 String billFileName(Sale sale, CreditNote? creditNote) {
-  final day = fileDay(creditNote?.date ?? sale.date);
+  final day = fileDay(billDate(sale, creditNote));
   final payment = creditNote != null ? 'Credit note' : sale.isCredit ? 'Credit' : accountName(sale.account);
   final number = creditNote?.number ?? sale.invoiceNumber ?? sale.id;
   final customer = sale.customer?.name.trim() ?? '';

@@ -161,11 +161,10 @@ class OwnerDashboard extends StatelessWidget {
   /// Answers the owner's "what are my employees doing?" — today's completed
   /// sales grouped by whoever recorded them.
   List<Widget> _staffActivity(BuildContext context, SalesController sales) {
-    final today = DateTime.now();
     final byStaff = <String, (int, double)>{};
     for (final s in sales.sales) {
       if (s.status != SaleStatus.completed) continue;
-      if (s.date.year != today.year || s.date.month != today.month || s.date.day != today.day) continue;
+      if (!isToday(s.soldDate)) continue;
       if (s.createdByName.isEmpty) continue;
       final existing = byStaff[s.createdByName] ?? (0, 0.0);
       byStaff[s.createdByName] = (existing.$1 + 1, existing.$2 + s.total);

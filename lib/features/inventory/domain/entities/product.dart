@@ -101,6 +101,9 @@ class Product {
     final p = primary;
     if (p.size != 1) return '${formatQty(baseQty / p.size)} ${p.label} ($base)';
     if (packs.isEmpty) return base;
+    final smallest = packs.reduce((a, b) => a.size <= b.size ? a : b);
+    // A unit added smaller than the base later (1 packet = 1/30 sack).
+    if (smallest.size < 1) return '$base (${formatQty((baseQty / smallest.size + 1e-6).floorToDouble())} ${smallest.label})';
     final biggest = packs.reduce((a, b) => a.size >= b.size ? a : b);
     return '$base (${formatQty((baseQty / biggest.size).floorToDouble())} ${biggest.label})';
   }

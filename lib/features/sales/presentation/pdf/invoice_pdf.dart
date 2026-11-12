@@ -12,17 +12,32 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
 /// The bill as lines of (label, value): shared by the screen and the PDF so
 /// both always show the same thing. A VAT sale is a "Tax Invoice".
 /// The exact layout IRD requires should be confirmed by your accountant.
+/// A tax invoice is dated when issued (an edit's new invoice: the edit day);
+/// any other bill keeps the day the goods were sold.
+DateTime billDate(Sale sale, CreditNote? creditNote) => creditNote?.date ?? (sale.invoiceNumber != null ? sale.date : sale.soldDate);
+
+/// What an edited bill says about its edit: the bill it replaces ([replaces]:
+/// its number) and the other of sold / edited dates.
+List<(String, String)> editRows(Sale sale, String? replaces) => [
+      if (sale.corrects != null) ...[
+        if (sale.invoiceNumber != null) ('Goods sold on', '${formatBs(sale.soldDate)} (${formatDate(sale.soldDate)})')
+        else ('Edited', '${formatDate(sale.date)}${sale.createdByName.isEmpty ? '' : ' by ${sale.createdByName}'}'),
+        ('Replaces ${sale.invoiceNumber != null ? 'invoice' : 'bill'}', replaces ?? sale.corrects!),
+      ],
+    ];
+
 ({String title, List<(String, String)> head, List<(String, String, String)> lines, List<(String, String)> totals}) billContent(
   Sale sale,
   BusinessSettings seller, {
   CreditNote? creditNote,
   double? paid,
   double returned = 0,
+  String? replaces,
 }) {
   final showPaid = paid != null && sale.isCredit && creditNote == null;
   final net = sale.total - returned;
   final tax = sale.invoiceNumber != null;
-  final date = creditNote?.date ?? sale.date;
+  final date = billDate(sale, creditNote);
   return (
     title: creditNote != null ? 'Credit Note' : (tax ? 'Tax Invoice' : 'Invoice'),
     head: [
@@ -32,6 +47,7 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
       if (creditNote != null) ...[('Credit note no.', creditNote.number), ('Against invoice', sale.invoiceNumber ?? sale.id), ('Reason', creditNote.reason)]
       else ('${tax ? 'Invoice' : 'Bill'} no.', sale.invoiceNumber ?? sale.id),
       ('Date', '${formatBs(date)} (${formatDate(date)})'),
+      for (final (k, v) in editRows(sale, replaces)) (k, v),
       ('Buyer', sale.customer?.name ?? 'Walk-in customer'),
       if (sale.buyerPan.isNotEmpty) ('Buyer PAN', sale.buyerPan),
       ('Payment', billPayment(sale, paid: paid, returned: returned)),
@@ -57,10 +73,10 @@ import 'package:sarathigrocery/features/settings/domain/entities/business_settin
 /// customer block left / invoice block right, ruled item table, amount in
 /// words, totals, and signature lines.
 /// [copies]: one page per label (printing: customer + shop copy).
-Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? creditNote, double? paid, double returned = 0, List<String> copies = const ['']}) {
+Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? creditNote, double? paid, double returned = 0, String? replaces, List<String> copies = const ['']}) {
   final tax = sale.invoiceNumber != null;
-  final date = creditNote?.date ?? sale.date;
-  final c = billContent(sale, seller, creditNote: creditNote, paid: paid, returned: returned);
+  final date = billDate(sale, creditNote);
+  final c = billContent(sale, seller, creditNote: creditNote, paid: paid, returned: returned, replaces: replaces);
   final customer = sale.customer;
   return billLayoutPdf(
     copies: copies,
@@ -78,6 +94,7 @@ Future<Uint8List> billPdf(Sale sale, BusinessSettings seller, {CreditNote? credi
       ('Invoice Miti', billBsDmy(date)),
       if (creditNote != null) ...[('Credit Note No', creditNote.number), ('Against Invoice', sale.invoiceNumber ?? sale.id)]
       else ('Invoice No', sale.invoiceNumber ?? sale.id),
+      if (creditNote == null) ...editRows(sale, replaces),
     ],
     items: [
       for (final i in sale.items) (name: '${i.product.name}${tax && i.product.vatExempt ? ' (VAT exempt)' : ''}', qty: i.qty, unit: i.unit, rate: i.unitPrice, amount: i.lineTotal),

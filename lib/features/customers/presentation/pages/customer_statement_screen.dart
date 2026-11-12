@@ -12,6 +12,7 @@ import 'package:sarathigrocery/features/customers/presentation/pdf/payment_docum
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_sheet.dart';
 import 'package:sarathigrocery/features/customers/presentation/widgets/payment_widgets.dart';
 import 'package:sarathigrocery/features/sales/domain/entities/sale_item.dart';
+import 'package:sarathigrocery/features/sales/presentation/pages/invoice_screen.dart' show fileDay, pdfFileName;
 
 /// The account both sides trust: every bill (cash and udharo) and payment in
 /// the chosen period, running balance, and a check that the stored balance
@@ -63,9 +64,9 @@ class _CustomerStatementScreenState extends State<CustomerStatementScreen> {
       ),
     );
     if (choice == 'full') {
-      await sharePdf(await fullStatementPdf(customer, full, businessName: payments.businessName, period: _period?.label ?? 'All time'), 'statement-${customer.id}.pdf');
+      await sharePdf(await fullStatementPdf(customer, full, businessName: payments.businessName, period: _period?.label ?? 'All time'), pdfFileName([customer.name.trim(), fileDay(DateTime.now()), 'Statement', _period?.label ?? 'All time']));
     } else if (choice == 'due') {
-      await sharePdf(await amountDuePdf(customer, statement, businessName: payments.businessName), 'amount-due-${customer.id}.pdf');
+      await sharePdf(await amountDuePdf(customer, statement, businessName: payments.businessName), pdfFileName([customer.name.trim(), fileDay(DateTime.now()), 'Credit']));
     }
   }
 
@@ -160,7 +161,7 @@ void _showItems(BuildContext context, HistoryLine line) {
     builder: (context) => SafeArea(
       child: ListView(shrinkWrap: true, padding: const EdgeInsets.all(16), children: [
         Text(line.title, style: Theme.of(context).textTheme.titleMedium),
-        Text(formatDate(sale.date)),
+        Text(formatDate(sale.soldDate)),
         for (final i in sale.items) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text(item(i)), trailing: Text(formatNpr(i.lineTotal))),
         for (final r in line.returns) ...[
           Text('Returned ${formatDate(r.date)}', style: const TextStyle(fontWeight: FontWeight.w600)),

@@ -28,8 +28,11 @@ class SalesHistoryScreen extends StatelessWidget {
     return ListenableBuilder(
       listenable: Listenable.merge([sales, auth]),
       builder: (context, _) {
-        // Goods refused at the door show on their bill, not as sales.
-        final visibleSales = sales.sales.reversed.where((s) => !s.isDoorReturn).toList();
+        // Goods refused at the door show on their bill, not as sales; an
+        // edited sale shows once, its latest version, on the day it was sold.
+        final replaced = {for (final s in sales.sales) if (s.corrects != null) s.corrects};
+        final visibleSales = sales.sales.reversed.where((s) => !s.isDoorReturn && !replaced.contains(s.id)).toList()
+          ..sort((a, b) => b.soldDate.compareTo(a.soldDate));
         final canSell = auth.can(Permission.createSales);
         final canCollect = auth.can(Permission.recordPayments);
         final statements = <String, CustomerStatement>{};
@@ -61,7 +64,9 @@ class SalesHistoryScreen extends StatelessWidget {
                         ? (sales.correctionOf(sale) != null ? 'corrected' : sale.status.name, Colors.red)
                         : sale.flaggedForApproval
                             ? ('Over credit limit', Colors.orange)
-                            : null;
+                            : sale.corrects != null
+                                ? ('Edited', Colors.blue)
+                                : null;
                     // Actions get their own full-size row under the sale, so
                     // a near miss doesn't open the bill instead.
                     return Column(
@@ -71,8 +76,8 @@ class SalesHistoryScreen extends StatelessWidget {
                           contentPadding: EdgeInsets.zero,
                           onTap: () => openBill(sale),
                           title: Text(sale.customer?.name ?? 'Walk-in customer'),
-                          subtitle: Text('${sale.invoiceNumber ?? sale.id} · ${formatDate(sale.date)} · $payState'
-                              '${returned > 0.005 ? ' · ${formatNpr(returned)} returned' : ''}${sale.corrects != null ? ' · correction' : ''}'),
+                          subtitle: Text('${sale.invoiceNumber ?? sale.id} · ${formatDate(sale.soldDate)} · $payState'
+                              '${returned > 0.005 ? ' · ${formatNpr(returned)} returned' : ''}${sale.corrects != null ? ' · edited ${formatDate(sale.date)}' : ''}'),
                           trailing: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.end,

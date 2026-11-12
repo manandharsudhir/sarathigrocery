@@ -1,3 +1,4 @@
+import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:sarathigrocery/core/services/app_signal.dart';
@@ -293,7 +294,9 @@ class SalesController extends ChangeNotifier {
 
   /// A counter sale that can be corrected or take items back: completed,
   /// not an order's bill, nothing returned on it yet (for [canCorrect]).
-  bool canCorrect(Sale sale) => sale.status == SaleStatus.completed && !sale.isDoorReturn && sale.orderId == null && doorReturnsOf(sale).every((r) => r.status != SaleStatus.completed);
+  /// Staff correct only today's sales; the owner any (rules: within 24 h).
+  bool canCorrect(Sale sale, {bool owner = true}) =>
+      sale.status == SaleStatus.completed && !sale.isDoorReturn && sale.orderId == null && doorReturnsOf(sale).every((r) => r.status != SaleStatus.completed) && (owner || isToday(sale.date));
 
   bool canReturnItems(Sale sale) => sale.status == SaleStatus.completed && !sale.isDoorReturn && sale.orderId == null && _returnItems.remaining(sale).any((q) => q > 1e-9);
 

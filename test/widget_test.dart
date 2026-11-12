@@ -155,6 +155,35 @@ void main() {
     expect(costField(), findsOneWidget);
   });
 
+  testWidgets('Edit product with stock: adding units never breaks the "Usually sold in" dropdown', (WidgetTester tester) async {
+    final accounts = InMemoryAuthRepository();
+    final owner = AppScope(authRepository: accounts);
+    late final Product sugar;
+    await tester.runAsync(() async {
+      await signUp(owner, accounts, phone: '9800000001', password: 'password123');
+      sugar = owner.inventory.createProduct(
+          name: 'Sugar', category: 'General', unit: ProductUnit.custom, customUnitLabel: 'sack', unitPrice: 3300, purchasePrice: 3000, stockQty: 1, reorderLevel: 0);
+    });
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(MaterialApp(home: ProductFormScreen(controller: owner.inventory, auth: owner.auth, settings: owner.settings, product: sugar)));
+    await tester.pumpAndSettle();
+
+    Future<void> nameNewUnit(String name) async {
+      await tester.tap(find.text('Add unit'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(DropdownButtonFormField<String>, 'Unit').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(name).last);
+      await tester.pumpAndSettle();
+    }
+
+    await nameNewUnit('packet');
+    expect(tester.takeException(), isNull);
+    await nameNewUnit('sack'); // same name as the main unit: an error on save, not a crash
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('New Sale: tap products, step quantities, charge; walk-in cash in two taps, customer on udharo', (WidgetTester tester) async {
     final accounts = InMemoryAuthRepository();
     final owner = AppScope(store: InMemoryRemoteStore(), authRepository: accounts);

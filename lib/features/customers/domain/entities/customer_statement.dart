@@ -232,7 +232,7 @@ FullStatement buildFullStatement(Customer customer, CustomerStatement statement,
   final events = <HistoryLine>[
     for (final s in [...bills, ...orphanReturns])
       HistoryLine(
-        date: s.date,
+        date: s.soldDate,
         title: billTitle(s),
         change: s.isCredit ? s.total + (returnsOf[s.id] ?? []).fold(0.0, (t, r) => t + r.total) : 0,
         balance: 0,

@@ -31,6 +31,7 @@ abstract class SaleRepository {
     String buyerPan,
     String? returnOf,
     String? corrects,
+    DateTime? soldOn,
   });
 
   List<CreditNote> get creditNotes;

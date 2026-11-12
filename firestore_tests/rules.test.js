@@ -409,6 +409,27 @@ describe('corrections', () => {
     await assertSucceeds(ok.commit());
   });
 
+  test('an edit keeps the day the goods were sold; staff edit only recent sales', async () => {
+    const sold = Date.now() - 3 * DAY;
+    await seed('sales/OLD', { status: 'completed', total: 100, date: sold });
+    await seed('sales/NEW', { status: 'completed', total: 100, date: Date.now() });
+    await env.withSecurityRulesDisabled((ctx) =>
+      updateDoc(doc(ctx.firestore(), p(`users/${EMPLOYEE}`)), { customPermissions: ['createSales', 'cancelSales'] }));
+    const edit = async (uid, of, fields) => {
+      const d = db(uid);
+      const b = writeBatch(d);
+      b.update(doc(d, p(`sales/${of}`)), { status: 'cancelled' });
+      b.set(doc(d, p(`sales/E-${of}`)), { status: 'completed', total: 90, isCredit: false, corrects: of, ...fields });
+      return b.commit();
+    };
+    await assertFails(edit(EMPLOYEE, 'OLD', { soldOn: sold }), 'staff: not a sale from days ago');
+    await assertFails(edit(OWNER, 'OLD', { soldOn: sold - DAY }), 'soldOn is the first version\'s day, nothing else');
+    await assertSucceeds(edit(OWNER, 'OLD', { soldOn: sold }));
+    await assertFails(setDoc(doc(db(OWNER), p('sales/X1')), { status: 'completed', total: 5, soldOn: sold }), 'only an edit carries soldOn');
+    const today = (await getDoc(doc(db(OWNER), p('sales/NEW')))).data().date;
+    await assertSucceeds(edit(EMPLOYEE, 'NEW', { soldOn: today }));
+  });
+
   test('only the owner sets the corrections alert level', async () => {
     await env.withSecurityRulesDisabled((ctx) =>
       updateDoc(doc(ctx.firestore(), p(`users/${EMPLOYEE}`)), { customPermissions: ['manageSettings'] }));

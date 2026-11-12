@@ -221,7 +221,7 @@ class _SalesReportScreenState extends State<_SalesReportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sales = widget.sales.sales.where((s) => s.status == SaleStatus.completed && (_range == null || _inRange(s.date, _range!))).toList();
+    final sales = widget.sales.sales.where((s) => s.status == SaleStatus.completed && (_range == null || _inRange(s.soldDate, _range!))).toList();
     final total = sales.fold(0.0, (sum, s) => sum + s.total);
     return Scaffold(
       appBar: AppBar(title: const Text('Sales Report')),
@@ -235,7 +235,7 @@ class _SalesReportScreenState extends State<_SalesReportScreen> {
               children: sales.map((s) => ListTile(
                     dense: true,
                     title: Text(s.customer?.name ?? 'Walk-in'),
-                    subtitle: Text(formatDate(s.date)),
+                    subtitle: Text(formatDate(s.soldDate)),
                     trailing: Text(formatNpr(s.total)),
                   )).toList(),
             ),
@@ -259,7 +259,7 @@ class _SalesByProductScreenState extends State<_SalesByProductScreen> {
   @override
   Widget build(BuildContext context) {
     final Map<Product, (double, double)> byProduct = {};
-    for (final s in widget.sales.sales.where((s) => s.status == SaleStatus.completed && (_range == null || _inRange(s.date, _range!)))) {
+    for (final s in widget.sales.sales.where((s) => s.status == SaleStatus.completed && (_range == null || _inRange(s.soldDate, _range!)))) {
       for (final item in s.items) {
         final existing = byProduct[item.product] ?? (0.0, 0.0);
         byProduct[item.product] = (existing.$1 + item.baseQty, existing.$2 + item.lineTotal);
@@ -302,7 +302,7 @@ class _ProductSalesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lines = [
-      for (final s in sales.sales.where((s) => s.status == SaleStatus.completed && _inRange(s.date, range)))
+      for (final s in sales.sales.where((s) => s.status == SaleStatus.completed && _inRange(s.soldDate, range)))
         for (final item in s.items.where((i) => i.product == product)) (s, item),
     ]..sort((a, b) => b.$1.date.compareTo(a.$1.date));
     final qty = lines.fold(0.0, (sum, l) => sum + l.$2.baseQty);

@@ -81,11 +81,18 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
 
   String get _main => _primary.value.isEmpty ? 'unit' : _primary.value;
 
-  List<String> get _unitNames => [_main, for (final u in _units) if (u.name.value.isNotEmpty) u.name.value];
+  /// Distinct: a unit named twice is reported on save, not by the dropdown.
+  List<String> get _unitNames => {_main, for (final u in _units) if (u.name.value.isNotEmpty) u.name.value}.toList();
 
-  UnitPlan _plan() => planUnits(_primary.value, double.tryParse(_primaryPrice.text) ?? 0, [
-        for (final u in _units) (name: u.name.value, perPrimary: double.tryParse(u.perPrimary.text) ?? 0, bigger: u.bigger, price: double.tryParse(u.price.text) ?? 0),
-      ]);
+  /// With stock on hand the base unit stays (see [planUnits] keepBase).
+  bool get _hasStock => widget.product != null && (widget.product!.stockQty != 0 || widget.product!.reservedQty != 0);
+
+  UnitPlan _plan() => planUnits(
+        _primary.value,
+        double.tryParse(_primaryPrice.text) ?? 0,
+        [for (final u in _units) (name: u.name.value, perPrimary: double.tryParse(u.perPrimary.text) ?? 0, bigger: u.bigger, price: double.tryParse(u.price.text) ?? 0)],
+        keepBase: _hasStock ? widget.product!.unitLabel : null,
+      );
 
   /// Units whose minimum price is below cost: a warning (clearance is allowed).
   List<String> get _belowCost {
@@ -199,13 +206,15 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                   style: const TextStyle(color: Colors.grey),
                 ),
               ),
-              number(row.price, 'Min. price per ${row.name.value.isEmpty ? 'unit' : row.name.value}'),
+              number(row.price, 'Min. price per ${row.name.value.isEmpty ? 'unit' : row.name.value} (optional)'),
             ]),
           ),
         ),
       Align(alignment: Alignment.centerLeft, child: TextButton.icon(icon: const Icon(Icons.add), label: const Text('Add unit'), onPressed: _addUnit)),
       if (_unitNames.length > 1)
         DropdownButtonFormField<String>(
+          // The field keeps its own value: rebuild it when the units change.
+          key: ValueKey(_unitNames.join('|')),
           initialValue: _unitNames.contains(_saleUnit) ? _saleUnit : null,
           decoration: const InputDecoration(labelText: 'Usually sold in', helperText: 'A new sale line starts in this unit'),
           items: [for (final n in _unitNames) DropdownMenuItem(value: n, child: Text(n))],
@@ -272,7 +281,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
 
   void _save() {
     if (_name.text.trim().isEmpty || _category.isEmpty) return;
-    final UnitPlan plan;
+    UnitPlan plan;
     try {
       plan = _plan();
     } on ArgumentError catch (e) {
@@ -280,13 +289,22 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       return;
     }
     final existing = widget.product;
-    if (existing != null && (existing.stockQty != 0 || existing.reservedQty != 0)) {
-      // Stock is counted in the smallest unit: with stock on hand, that and
-      // the existing conversions stay as they are (new units can be added).
+    if (existing != null && _hasStock) {
+      // With stock on hand the base unit and existing conversions stay as
+      // they are; new units (smaller ones too) can be added.
       final sizes = {for (final u in existing.sellUnits) u.label: u.size};
-      final moved = plan.base != existing.unitLabel || plan.packs.any((k) => sizes.containsKey(k.label) && sizes[k.label] != k.size);
+      final moved = plan.base != existing.unitLabel || plan.packs.any((k) => sizes.containsKey(k.label) && (sizes[k.label]! - k.size).abs() > 1e-5);
+      // Same conversion re-entered: keep the stored size exactly (older packs
+      // were rounded to 6 decimals).
+      plan = (
+        base: plan.base,
+        basePrice: plan.basePrice,
+        packs: [for (final k in plan.packs) ProductPack(label: k.label, size: sizes[k.label] ?? k.size, price: k.price)],
+        primarySize: sizes[plan.primary] ?? plan.primarySize,
+        primary: plan.primary,
+      );
       if (moved) {
-        setState(() => _unitError = 'This product has stock, so its smallest unit (${existing.unitLabel}) and existing conversions can\'t change. You can add units or change prices.');
+        setState(() => _unitError = 'This product has stock, so ${existing.unitLabel} must stay one of its units and existing conversions can\'t change. You can add units (smaller ones too) or change prices.');
         return;
       }
     }

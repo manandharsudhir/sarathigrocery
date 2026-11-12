@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:sarathigrocery/core/utils/formatters.dart';
 import 'package:sarathigrocery/features/accounting/domain/books.dart';
 import 'package:sarathigrocery/features/accounting/domain/entities/accounts.dart';
+import 'package:sarathigrocery/features/auth/domain/entities/user_role.dart';
 import 'package:sarathigrocery/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:sarathigrocery/features/customers/presentation/controllers/customers_controller.dart';
 import 'package:sarathigrocery/features/inventory/presentation/controllers/inventory_controller.dart';
@@ -21,7 +22,7 @@ void showFixSaleSheet(BuildContext context, Sale sale,
     builder: (sheet) => SafeArea(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(title: Text('Fix sale ${sale.invoiceNumber ?? sale.id}', style: Theme.of(sheet).textTheme.titleMedium)),
-        if (sales.canCorrect(sale))
+        if (sales.canCorrect(sale, owner: auth.currentUser?.role == UserRole.owner))
           ListTile(
             leading: const Icon(Icons.edit_note),
             title: const Text('Correct a mistake'),

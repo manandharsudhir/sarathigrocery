@@ -24,6 +24,7 @@ class Sale {
     this.buyerPan = '',
     this.returnOf,
     this.corrects,
+    this.soldOn,
   });
 
   final String id;
@@ -69,6 +70,14 @@ class Sale {
   /// The sale this one replaces (cancelled and entered again after a
   /// mistake). Payments against that bill follow to this one.
   final String? corrects;
+
+  /// On an edit ([corrects] set): when the goods were actually sold (the
+  /// first version's day). [date] is when this version was issued: the
+  /// edit day, and the legal invoice date in a VAT shop.
+  final DateTime? soldOn;
+
+  /// The day the sale belongs to in sales lists and reports.
+  DateTime get soldDate => soldOn ?? date;
 
   double get linesTotal => items.fold(0, (sum, i) => sum + i.lineTotal);
   double get total => linesTotal + (vatIncluded ? 0 : vatAmount);

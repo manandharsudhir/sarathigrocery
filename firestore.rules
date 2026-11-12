@@ -325,7 +325,13 @@ service cloud.firestore {
             || can('cancelSales') || can('editSales'))
           && (request.resource.data.get('corrects', null) == null
             || ((can('cancelSales') || can('editSales'))
-              && getAfter(salePath(request.resource.data.corrects)).data.status == 'cancelled'))
+              && getAfter(salePath(request.resource.data.corrects)).data.status == 'cancelled'
+              // Staff edit only recent sales; the owner any.
+              && (isOwner() || get(salePath(request.resource.data.corrects)).data.date > request.time.toMillis() - 86400000)))
+          // soldOn: an edit keeps the day the goods were sold, nothing else.
+          && (request.resource.data.get('soldOn', null) == null
+            || (request.resource.data.get('corrects', null) is string
+              && request.resource.data.soldOn == get(salePath(request.resource.data.corrects)).data.get('soldOn', get(salePath(request.resource.data.corrects)).data.date)))
           && (can('createSales')
           // The bill for an order (issued at dispatch, or on delivery for older
           // orders), and goods refused at the door, by whoever delivers it.

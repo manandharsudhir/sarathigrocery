@@ -80,6 +80,7 @@ class RecordSale {
       invoiceSeq: bill?.seq,
       buyerPan: customer?.pan ?? '',
       corrects: corrects?.id,
+      soldOn: corrects?.soldDate,
     );
     _books.sale(sale);
 

@@ -15,7 +15,11 @@ typedef UnitPlan = ({String base, double basePrice, List<ProductPack> packs, dou
 /// name twice (sacks of 25 and 50 kg) is told apart by size ("sack 25kg").
 /// Throws [ArgumentError] for a missing name, a conversion ≤ 0, a unit
 /// named like the primary, or a true duplicate.
-UnitPlan planUnits(String primary, double primaryPrice, List<UnitEntry> others) {
+///
+/// [keepBase]: a product with stock keeps counting in its current base unit,
+/// so stock and past lines (sizes in base units) keep their meaning; a unit
+/// smaller than it becomes a fraction (1 packet = 1/30 sack).
+UnitPlan planUnits(String primary, double primaryPrice, List<UnitEntry> others, {String? keepBase}) {
   primary = primary.trim();
   final all = [
     (name: primary, inPrimary: 1.0, price: primaryPrice),
@@ -25,9 +29,12 @@ UnitPlan planUnits(String primary, double primaryPrice, List<UnitEntry> others) 
   if (others.any((u) => u.perPrimary <= 0)) throw ArgumentError('Every conversion must be more than 0.');
   if (others.any((u) => u.name.trim() == primary)) throw ArgumentError('$primary is already the main unit.');
 
-  var baseAt = 0;
-  for (var i = 1; i < all.length; i++) {
-    if (all[i].inPrimary < all[baseAt].inPrimary) baseAt = i;
+  var baseAt = keepBase == null ? -1 : all.indexWhere((u) => u.name == keepBase);
+  if (baseAt < 0) {
+    baseAt = 0;
+    for (var i = 1; i < all.length; i++) {
+      if (all[i].inPrimary < all[baseAt].inPrimary) baseAt = i;
+    }
   }
   final unit = all[baseAt].inPrimary;
   double size(int i) => _clean(all[i].inPrimary / unit);
@@ -38,8 +45,11 @@ UnitPlan planUnits(String primary, double primaryPrice, List<UnitEntry> others) 
   return (base: all[baseAt].name, basePrice: all[baseAt].price, packs: packs, primarySize: size(0), primary: primary);
 }
 
-/// Removes float noise (1/0.02 = 49.99999…) from a conversion.
-double _clean(double v) => (v * 1e6).roundToDouble() / 1e6;
+/// Removes float noise (1/0.02 = 49.99999…) from a conversion; keeps enough
+/// digits for fractions of the base unit (1/30 sack).
+// ponytail: 30 × (1/30) leaves ~1e-11 sack in stock, below every 1e-9 stock
+// tolerance; store packs as whole-number ratios if it ever shows.
+double _clean(double v) => (v * 1e12).roundToDouble() / 1e12;
 
 /// The stored base unit for a unit name.
 ({ProductUnit unit, String custom}) baseUnitFor(String name) {
