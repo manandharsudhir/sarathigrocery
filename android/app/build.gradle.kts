@@ -29,6 +29,23 @@ android {
         versionName = flutter.versionName
     }
 
+    // Brands built from this codebase. Build/run with --flavor <name>.
+    // Each brand's launcher label comes from its appName placeholder; its Dart-side name
+    // from kAppName (lib/app/app.dart), which reads appFlavor.
+    flavorDimensions += "brand"
+    productFlavors {
+        create("sarathi") {
+            dimension = "brand"
+            isDefault = true
+            manifestPlaceholders["appName"] = "sarathigrocery"
+        }
+        create("uniquebakery") {
+            dimension = "brand"
+            applicationId = "com.manandharsudhir.uniquebakery"
+            manifestPlaceholders["appName"] = "Unique Bakery and Cookies"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

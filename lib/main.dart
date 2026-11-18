@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show appFlavor;
 
 import 'package:sarathigrocery/app/app.dart';
 import 'package:sarathigrocery/app/injection.dart';
@@ -9,10 +10,16 @@ import 'package:sarathigrocery/core/data/firestore_remote_store.dart';
 import 'package:sarathigrocery/core/services/error_reporter.dart' as errors;
 import 'package:sarathigrocery/features/auth/data/repositories/firebase_auth_repository.dart';
 import 'package:sarathigrocery/firebase_options.dart';
+import 'package:sarathigrocery/firebase_options_uniquebakery.dart' as uniquebakery;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // Each brand (build flavor) has its own Firebase project.
+  await Firebase.initializeApp(
+    options: appFlavor == 'uniquebakery'
+        ? uniquebakery.DefaultFirebaseOptions.currentPlatform
+        : DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Crashlytics has no web SDK; there errors stay on the console.
   if (!kIsWeb) {

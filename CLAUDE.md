@@ -23,7 +23,7 @@ Running bare `flutter`/`dart` may use a different SDK version than the one this 
 
 ## Platforms
 
-Platform scaffolding exists for android, ios, linux, macos, windows, and web. Firebase is configured (`flutterfire configure`) for android, ios, web only, and `main.dart` throws on macos/linux/windows. iOS deployment target is 15.0 (Firebase SPM minimum). The Android Crashlytics Gradle plugin (3.0.6) is applied.
+Platform scaffolding exists for android, ios, linux, macos, windows, and web. **Android flavors** (dimension `brand`, `android/app/build.gradle.kts`): `sarathi` (default, `com.manandharsudhir.sarathigrocery`) and `uniquebakery` ("Unique Bakery and Cookies", `com.manandharsudhir.uniquebakery`); pass `--flavor <name>` to Android run/build. The launcher label is each flavor's `appName` manifest placeholder; `kAppName` picks the in-app name from `appFlavor`. Each brand has its own Firebase project: `uniquebakery` uses `uniquebakery-6e91b` (`android/app/src/uniquebakery/google-services.json`, `lib/firebase_options_uniquebakery.dart`, chosen in `main.dart` by `appFlavor`); deploy rules to both projects. Never run a bare `flutterfire configure` for it: pass `--android-package-name=com.manandharsudhir.uniquebakery --android-out=android/app/src/uniquebakery/google-services.json --out=lib/firebase_options_uniquebakery.dart`, or it overwrites Sarathi's config. iOS has no flavor schemes yet. Firebase is configured (`flutterfire configure`) for android, ios, web only, and `main.dart` throws on macos/linux/windows. iOS deployment target is 15.0 (Firebase SPM minimum). The Android Crashlytics Gradle plugin (3.0.6) is applied.
 
 ## Project state
 

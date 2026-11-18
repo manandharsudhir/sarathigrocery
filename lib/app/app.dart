@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show appFlavor;
 
 import 'package:sarathigrocery/app/injection.dart';
 import 'package:sarathigrocery/app/navigation/app_shell.dart';
@@ -7,9 +8,11 @@ import 'package:sarathigrocery/features/auth/presentation/pages/setup_screen.dar
 import 'package:sarathigrocery/features/auth/presentation/pages/shop_picker_screen.dart';
 
 /// Product name shown on the login screen and as the app title. Shops show
-/// their own name (settings) everywhere else.
+/// their own name (settings) everywhere else. Picked by the build flavor
+/// (`--flavor`, see android/app/build.gradle.kts).
 // TODO(Q26): final brand name.
-const kAppName = 'Sarathi';
+const kAppName =
+    appFlavor == 'uniquebakery' ? 'Unique Bakery and Cookies' : 'Sarathi';
 
 class SarathiGroceryApp extends StatelessWidget {
   const SarathiGroceryApp({super.key, required this.scope});

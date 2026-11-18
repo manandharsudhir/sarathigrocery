@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "671067177984",
+    "project_id": "uniquebakery-6e91b",
+    "storage_bucket": "uniquebakery-6e91b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:671067177984:android:8183b693fbe8a835b544e5",
+        "android_client_info": {
+          "package_name": "com.manandharsudhir.sarathigrocery"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeMR_PLgRveb860BLjKWa8d9UEmukrOHQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:671067177984:android:5714504c2f5808e6b544e5",
+        "android_client_info": {
+          "package_name": "com.manandharsudhir.uniquebakery"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeMR_PLgRveb860BLjKWa8d9UEmukrOHQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
